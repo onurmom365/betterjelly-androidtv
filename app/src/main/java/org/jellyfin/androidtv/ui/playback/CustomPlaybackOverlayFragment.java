@@ -179,6 +179,12 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         binding = VlcPlayerInterfaceBinding.inflate(inflater, container, false);
         binding.textClock.setVideoPlayer(true);
+        binding.skipOverlay.setCountdownPositionProvider(() -> {
+            if (binding == null || !getViewLifecycleOwner().getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.RESUMED)) return -1L;
+            PlaybackController controller = playbackControllerContainer.getValue().getPlaybackController();
+            VideoManager video = controller != null ? controller.mVideoManager : null;
+            return video != null && video.isInitialized() ? video.getCurrentPosition() : -1L;
+        });
 
         // inject the RowsSupportFragment in the popup container
         if (getChildFragmentManager().findFragmentById(R.id.rows_area) == null) {
@@ -230,6 +236,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
 
     @Override
     public void onDestroyView() {
+        binding.skipOverlay.setCountdownPositionProvider(null);
         super.onDestroyView();
 
         binding = null;
@@ -1241,8 +1248,6 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
 
     public void setCurrentTime(long time) {
         binding.skipOverlay.setCurrentPositionMs(time);
-        PlaybackController controller = playbackControllerContainer.getValue().getPlaybackController();
-        binding.skipOverlay.setPlaybackRunning(controller != null && controller.isPlaying());
         if (leanbackOverlayFragment != null)
             leanbackOverlayFragment.updateCurrentPosition();
     }
@@ -1264,8 +1269,6 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
     }
 
     public void setPlayPauseActionState(final int state) {
-        PlaybackController controller = playbackControllerContainer.getValue().getPlaybackController();
-        if (binding != null) binding.skipOverlay.setPlaybackRunning(controller != null && controller.isPlaying());
         leanbackOverlayFragment.updatePlayState();
     }
 
