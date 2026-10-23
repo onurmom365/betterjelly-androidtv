@@ -255,6 +255,7 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
                             if (item == null) return null;
 
                             mBaseItem = item;
+                            if (playButton != null) playButton.setLabel(getString(getPlayButtonLabel()));
                             if (mResumeButton != null) {
                                 boolean resumeVisible = (mBaseItem.getType() == BaseItemKind.SERIES && !mBaseItem.getUserData().getPlayed()) || JavaCompat.getCanResume(mBaseItem);
                                 mResumeButton.setVisibility(resumeVisible ? View.VISIBLE : View.GONE);
@@ -757,6 +758,14 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
     TextUnderButton playButton = null;
     TextUnderButton trailerButton = null;
 
+    int getPlayButtonLabel() {
+        if (BaseItemExtensionsKt.isLiveTv(mBaseItem)) return R.string.lbl_tune_to_channel;
+        if (Utils.getSafeValue(mBaseItem.isFolder(), false)) return R.string.lbl_play_all;
+        if ((mBaseItem.getType() == BaseItemKind.MOVIE || mBaseItem.getType() == BaseItemKind.EPISODE)
+                && JavaCompat.getCanResume(mBaseItem)) return R.string.lbl_from_beginning;
+        return R.string.lbl_play;
+    }
+
     private void addButtons(int buttonSize) {
         BaseItemDto baseItem = mBaseItem;
         String buttonLabel;
@@ -781,7 +790,7 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
             boolean isSeries = baseItem.getType() == BaseItemKind.SERIES;
             boolean isStarted = baseItem.getUserData().getPlayedPercentage() != null && baseItem.getUserData().getPlayedPercentage() > 0;
 
-            playButton = TextUnderButton.create(requireContext(), R.drawable.ic_play, buttonSize, 2, getString(BaseItemExtensionsKt.isLiveTv(mBaseItem) ? R.string.lbl_tune_to_channel : Utils.getSafeValue(mBaseItem.isFolder(), false) ? R.string.lbl_play_all : R.string.lbl_play), new View.OnClickListener() {
+            playButton = TextUnderButton.create(requireContext(), R.drawable.ic_play, buttonSize, 2, getString(getPlayButtonLabel()), new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     play(mBaseItem, 0, false);

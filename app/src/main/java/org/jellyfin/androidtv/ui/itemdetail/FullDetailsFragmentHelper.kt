@@ -141,6 +141,7 @@ fun FullDetailsFragment.togglePlayed() {
 		mResumeButton?.apply {
 			isVisible = mBaseItem.canResume
 		}
+		playButton?.setLabel(getString(getPlayButtonLabel()))
 
 		// Force lists to re-fetch
 		dataRefreshService.lastPlayback = Instant.now()
