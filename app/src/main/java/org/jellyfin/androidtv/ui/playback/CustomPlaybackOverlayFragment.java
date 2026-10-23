@@ -61,6 +61,7 @@ import org.jellyfin.androidtv.ui.livetv.TvManager;
 import org.jellyfin.androidtv.ui.navigation.Destinations;
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository;
 import org.jellyfin.androidtv.ui.playback.overlay.LeanbackOverlayFragment;
+import org.jellyfin.androidtv.ui.playback.segment.SegmentCountdownCue;
 import org.jellyfin.androidtv.ui.presentation.CardPresenter;
 import org.jellyfin.androidtv.ui.presentation.ChannelCardPresenter;
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter;
@@ -1242,6 +1243,10 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
         binding.skipOverlay.setCurrentPositionMs(time);
         if (leanbackOverlayFragment != null)
             leanbackOverlayFragment.updateCurrentPosition();
+    }
+
+    public void setSegmentCountdowns(List<SegmentCountdownCue> cues) {
+        if (binding != null) binding.skipOverlay.setSegmentCountdowns(cues);
     }
 
     public void setSecondaryTime(long time) {

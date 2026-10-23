@@ -6,10 +6,12 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -20,11 +22,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.AbstractComposeView
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -33,18 +41,25 @@ import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.ui.base.Icon
 import org.jellyfin.androidtv.ui.base.Text
 import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentRepository
+import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentAction
+import org.jellyfin.androidtv.ui.playback.segment.SegmentCountdown
+import org.jellyfin.androidtv.ui.playback.segment.SegmentCountdownCue
+import org.jellyfin.androidtv.ui.playback.segment.findSegmentCountdown
+import org.jellyfin.sdk.model.api.MediaSegmentType
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun SkipOverlayComposable(
 	visible: Boolean,
+	countdown: SegmentCountdown? = null,
 ) {
 	Box(
 		contentAlignment = Alignment.BottomEnd,
 		modifier = Modifier
 			.padding(48.dp, 48.dp)
 	) {
+		if (countdown != null) SegmentCountdownCard(countdown)
 		AnimatedVisibility(visible, enter = fadeIn(), exit = fadeOut()) {
 			Row(
 				modifier = Modifier
@@ -69,6 +84,48 @@ fun SkipOverlayComposable(
 	}
 }
 
+@Composable
+private fun SegmentCountdownCard(countdown: SegmentCountdown) {
+	val segmentName = stringResource(when (countdown.cue.type) {
+		MediaSegmentType.INTRO -> R.string.segment_countdown_intro
+		MediaSegmentType.OUTRO -> R.string.segment_countdown_outro
+		else -> R.string.segment_countdown_recap
+	})
+	val label = stringResource(
+		if (countdown.cue.action == MediaSegmentAction.SKIP) R.string.segment_countdown_auto else R.string.segment_countdown_ask,
+		segmentName,
+	)
+	val description = stringResource(R.string.segment_countdown_accessibility, label, countdown.secondsRemaining)
+	val color = colorResource(R.color.button_default_normal_text)
+	Row(
+		modifier = Modifier
+			.clip(RoundedCornerShape(6.dp))
+			.background(colorResource(R.color.popup_menu_background).copy(alpha = 0.6f))
+			.padding(10.dp)
+			.semantics(mergeDescendants = true) { contentDescription = description },
+		horizontalArrangement = Arrangement.spacedBy(10.dp),
+		verticalAlignment = Alignment.CenterVertically,
+	) {
+		Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+			Canvas(Modifier.size(40.dp)) {
+				val width = 3.dp.toPx()
+				drawCircle(color.copy(alpha = 0.25f), radius = (size.minDimension - width) / 2, style = Stroke(width))
+				drawArc(
+					color = color,
+					startAngle = -90f,
+					sweepAngle = 360f * countdown.remainingFraction,
+					useCenter = false,
+					topLeft = Offset(width / 2, width / 2),
+					size = Size(size.width - width, size.height - width),
+					style = Stroke(width, cap = StrokeCap.Round),
+				)
+			}
+			Text(text = countdown.secondsRemaining.toString(), color = color, fontSize = 18.sp)
+		}
+		Text(text = label, color = color, fontSize = 18.sp)
+	}
+}
+
 class SkipOverlayView @JvmOverloads constructor(
 	context: Context,
 	attrs: AttributeSet? = null,
@@ -77,6 +134,13 @@ class SkipOverlayView @JvmOverloads constructor(
 	private val _currentPosition = MutableStateFlow(Duration.ZERO)
 	private val _targetPosition = MutableStateFlow<Duration?>(null)
 	private val _skipUiEnabled = MutableStateFlow(true)
+	private val _segmentCountdowns = MutableStateFlow<List<SegmentCountdownCue>>(emptyList())
+
+	var segmentCountdowns: List<SegmentCountdownCue>
+		get() = _segmentCountdowns.value
+		set(value) {
+			_segmentCountdowns.value = value.toList()
+		}
 
 	var currentPosition: Duration
 		get() = _currentPosition.value
@@ -122,6 +186,7 @@ class SkipOverlayView @JvmOverloads constructor(
 		val skipUiEnabled by _skipUiEnabled.collectAsState()
 		val currentPosition by _currentPosition.collectAsState()
 		val targetPosition by _targetPosition.collectAsState()
+		val segmentCountdowns by _segmentCountdowns.collectAsState()
 
 		val visible by remember(skipUiEnabled, currentPosition, targetPosition) {
 			derivedStateOf { visible }
@@ -133,6 +198,7 @@ class SkipOverlayView @JvmOverloads constructor(
 			_targetPosition.value = null
 		}
 
-		SkipOverlayComposable(visible)
+		val countdown = if (skipUiEnabled && !visible) findSegmentCountdown(segmentCountdowns, currentPosition.inWholeMilliseconds) else null
+		SkipOverlayComposable(visible, countdown)
 	}
 }

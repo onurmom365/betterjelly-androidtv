@@ -6,10 +6,13 @@ import androidx.media3.common.C
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentAction
 import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentRepository
+import org.jellyfin.androidtv.ui.playback.segment.SegmentCountdownCue
 import org.jellyfin.androidtv.util.sdk.end
 import org.jellyfin.androidtv.util.sdk.start
 import org.jellyfin.sdk.api.client.ApiClient
@@ -157,16 +160,25 @@ fun PlaybackController.applyMediaSegments(
 	item: BaseItemDto,
 	callback: () -> Unit,
 ) {
-	val mediaSegmentRepository by fragment.inject<MediaSegmentRepository>()
+	val playbackFragment = fragment ?: return
+	val videoManager = mVideoManager
+	val mediaSegmentRepository by playbackFragment.inject<MediaSegmentRepository>()
 
-	fragment?.clearSkipOverlay()
-	fragment.lifecycleScope.launch {
+	playbackFragment.clearSkipOverlay()
+	playbackFragment.setSegmentCountdowns(emptyList())
+	playbackFragment.lifecycleScope.launch {
 		val mediaSegments = runCatching {
 			mediaSegmentRepository.getSegmentsForItem(item)
 		}.getOrNull().orEmpty()
+		currentCoroutineContext().ensureActive()
+		if (fragment !== playbackFragment || mVideoManager !== videoManager || currentlyPlayingItem?.id != item.id) return@launch
+		val countdowns = mutableListOf<SegmentCountdownCue>()
 
 		for (mediaSegment in mediaSegments) {
 			val action = mediaSegmentRepository.getMediaSegmentAction(mediaSegment)
+			countdowns += SegmentCountdownCue(
+				mediaSegment.start.inWholeMilliseconds, mediaSegment.end.inWholeMilliseconds, mediaSegment.type, action,
+			)
 
 			when (action) {
 				MediaSegmentAction.SKIP -> addSkipAction(mediaSegment)
@@ -175,6 +187,7 @@ fun PlaybackController.applyMediaSegments(
 			}
 		}
 
+		playbackFragment.setSegmentCountdowns(countdowns)
 		callback()
 	}
 }
