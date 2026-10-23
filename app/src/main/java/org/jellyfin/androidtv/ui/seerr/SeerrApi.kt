@@ -6,6 +6,11 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.coroutines.CancellationException
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Cookie
@@ -22,15 +27,20 @@ import java.util.concurrent.TimeUnit
 
 const val SEERR_ORIGIN = "http://192.168.1.199:5055"
 internal val seerrJson = Json { ignoreUnknownKeys = true; explicitNulls = false }
+// Catalog metadata can contain explicit nulls where TMDB has no value. Required IDs stay strict.
+internal val seerrCatalogJson = Json(seerrJson) { coerceInputValues = true }
 
-class SeerrFailure(val status: Int = 0, val submissionUncertain: Boolean = false) : IOException() {
+class SeerrFailure(val status: Int = 0, val submissionUncertain: Boolean = false,
+	val invalidResponse: Boolean = false, val requestId: Int? = null) : IOException() {
 	val userMessage get() = when {
-		submissionUncertain -> "The result could not be confirmed. Refresh this title's status before trying again; the request may have reached Seerr."
+		submissionUncertain -> (requestId?.let { "Seerr returned request #$it, but its saved record could not be confirmed. " }
+			?: "The result could not be confirmed. ") + "Check status before trying again; do not submit a duplicate."
 		status == 401 || status == 403 -> "Sign-in or permission denied. Check your Seerr account and try again."
 		status == 409 || status == 202 -> "Already requested or no additional seasons are available. Refresh this title."
 		status == 429 -> "Seerr is busy. Please try again shortly."
 		status in 300..399 -> "Seerr redirected the connection. Check the server address."
 		status > 0 -> "Seerr could not complete this action. Refresh its status or try again later."
+		invalidResponse -> "Seerr responded, but its data could not be read. Please refresh and try again."
 		else -> "Seerr is unavailable. Library browsing and playback still work; return to your library or retry."
 	}
 }
@@ -104,7 +114,7 @@ class SeerrApi internal constructor(
 		}.build()
 	}
 	private inline fun <reified T> decode(body: String): T = try { seerrJson.decodeFromString(body) }
-	catch (_: Exception) { throw SeerrFailure() }
+	catch (_: Exception) { throw SeerrFailure(invalidResponse = true) }
 
 	suspend fun me(): SeerrUser = decode(exchange(request("/auth/me")))
 	suspend fun login(email: String, password: String): SeerrUser {
@@ -118,9 +128,18 @@ class SeerrApi internal constructor(
 	suspend fun titles(query: String, type: String, page: Int): SeerrPage {
 		val path = if (query.isBlank()) "/discover/${if (type == "movie") "movies" else "tv"}" else "/search"
 		val params = mutableMapOf("page" to page.toString()).apply { if (query.isNotBlank()) put("query", query.trim()) }
-		val results: SeerrPage = decode(exchange(request(path, params)))
-		return results.copy(results = results.results.map { if (it.mediaType.isBlank()) it.copy(mediaType = type) else it }
-			.filter { it.mediaType in listOf("movie", "tv") })
+		val response = exchange(request(path, params))
+		return try {
+			// Filter heterogeneous search results before decoding movie/TV metadata.
+			val page = seerrJson.parseToJsonElement(response) as JsonObject
+			val entries = page["results"] as JsonArray
+			val filtered = entries.filter { entry ->
+				val kind = (entry as? JsonObject)?.get("mediaType")?.jsonPrimitive?.contentOrNull
+				kind in listOf("movie", "tv") || (query.isBlank() && kind.isNullOrBlank())
+			}
+			val results = seerrCatalogJson.decodeFromJsonElement(SeerrPage.serializer(), JsonObject(page + ("results" to JsonArray(filtered))))
+			results.copy(results = results.results.map { if (it.mediaType.isBlank()) it.copy(mediaType = type) else it })
+		} catch (_: Exception) { throw SeerrFailure(invalidResponse = true) }
 	}
 	suspend fun details(type: String, id: Int): SeerrTitle {
 		require(type in listOf("movie", "tv") && id > 0)
@@ -134,6 +153,17 @@ class SeerrApi internal constructor(
 		require(!body.is4k)
 		val response = exchange(request("/request", body = seerrJson.encodeToString(body)), submitting = true)
 		return try { decode<SeerrRequest>(response) } catch (_: Exception) { throw SeerrFailure(submissionUncertain = true) }
+	}
+
+	/** A POST response alone is not a saved-record confirmation. This read never retries the POST. */
+	suspend fun confirmRequest(body: SeerrRequestBody, id: Int): SeerrRequest {
+		require(id > 0)
+		try {
+			return decode<SeerrRequest>(exchange(request("/request/$id"))).also { receipt ->
+				require(receipt.matches(body) && receipt.id == id)
+			}
+		} catch (error: CancellationException) { throw error }
+		catch (_: Exception) { throw SeerrFailure(submissionUncertain = true, requestId = id) }
 	}
 	suspend fun history(userId: Int, filter: String, page: Int): SeerrRequestPage {
 		require(userId > 0 && filter in listOf("all", "pending", "processing", "available", "failed") && page > 0)

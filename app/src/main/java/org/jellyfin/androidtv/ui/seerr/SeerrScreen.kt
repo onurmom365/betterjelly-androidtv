@@ -277,9 +277,12 @@ private fun RequestDialog(s: SeerrUiState, model: SeerrViewModel) {
 					Text(title.displayTitle, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
 				}
 			}
+			if (s.submitting) Text(s.submissionStep ?: "Preparing request…", color = Accent, fontSize = 14.sp,
+				modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp))
+			s.message?.let { message -> Text(message, color = Color(0xFFFFC588), fontSize = 14.sp,
+				modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp)) }
 			LazyColumn(Modifier.weight(1f, fill = false).padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-				if (s.busy) item { Text("Loading request options…", color = Muted) }
-				s.message?.let { message -> item { Text(message, color = Color(0xFFFFC588), fontSize = 14.sp) } }
+				if (s.busy && !s.submitting) item { Text("Loading request options…", color = Muted) }
 				if (s.reviewing) {
 					item { Summary("Destination", s.service?.server?.name ?: "Seerr default") }
 					item { Summary("Quality profile", s.service?.profiles?.find { it.id == s.profileId }?.name ?: "Seerr default") }
@@ -329,8 +332,9 @@ private fun RequestDialog(s: SeerrUiState, model: SeerrViewModel) {
 			}
 			Row(Modifier.fillMaxWidth().padding(20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)) {
 				Action(if (s.reviewing) "Edit" else "Cancel", !s.submitting, modifier = Modifier.focusRequester(cancelFocus)) { model.back() }
-				Action(if (s.submitting) "Requesting…" else if (s.reviewing) "Request" else "Review request", !s.busy && s.requestBody() != null, primary = true) {
-					if (s.reviewing) model.submit() else model.review()
+				Action(if (s.submitting) "Requesting…" else if (s.needsRefresh) "Check status" else if (s.reviewing) "Request" else "Review request",
+					!s.busy && (s.needsRefresh || s.requestBody() != null), primary = true) {
+					if (s.needsRefresh) model.checkRequestStatus() else if (s.reviewing) model.submit() else model.review()
 				}
 			}
 		}

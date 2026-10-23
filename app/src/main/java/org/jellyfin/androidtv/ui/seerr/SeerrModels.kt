@@ -31,6 +31,10 @@ data class SeerrRequest(
 	val profileName: String? = null,
 	val createdAt: String = "",
 ) {
+	fun matches(body: SeerrRequestBody) = id > 0 && type == body.mediaType && is4k == body.is4k &&
+		status in listOf(1, 2, 5) && media?.tmdbId == body.mediaId && media.mediaType == body.mediaType &&
+		(body.mediaType != "tv" || body.seasons.orEmpty().isNotEmpty() &&
+			body.seasons.orEmpty().all { chosen -> seasons.any { it.seasonNumber == chosen && it.status in listOf(1, 2, 5) } })
 	val statusLabel get() = when (status) {
 		1 -> "Pending approval"
 		2 -> "Requested"

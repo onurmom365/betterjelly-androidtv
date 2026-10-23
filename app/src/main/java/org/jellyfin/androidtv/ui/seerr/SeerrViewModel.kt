@@ -22,6 +22,7 @@ import kotlin.coroutines.coroutineContext
 data class SeerrUiState(
 	val user: SeerrUser? = null, val busy: Boolean = false, val submitting: Boolean = false,
 	val message: String? = null, val pinCode: String? = null,
+	val submissionStep: String? = null,
 	val query: String = "", val type: String = "movie", val page: Int = 1, val totalPages: Int = 1,
 	val results: List<SeerrTitle> = emptyList(), val title: SeerrTitle? = null,
 	val libraryMatches: List<BaseItemDto> = emptyList(), val libraryChecked: Boolean = false, val exactLibraryMatch: Boolean = false,
@@ -203,25 +204,24 @@ class SeerrViewModel(private val api: SeerrApi, private val library: SeerrLibrar
 		perform {
 			_state.update { it.copy(submitting = true) }
 			try {
-				val user = api.me()
-				val title = api.details(requireNotNull(snapshot.title).mediaType, snapshot.title.id)
-				val local = library.find(title).getOrElse { throw SeerrFailure() }
-				require(title.mediaType != "movie" || local.isEmpty())
-				val services = normalSeerrServices(api.services(title.mediaType))
-				require(services.isNotEmpty())
-				val service = snapshot.service?.let { selected ->
-					require(services.any { it.id == selected.server.id })
-					api.service(title.mediaType, selected.server.id)
-				}
-				if (service == null) require(defaultSeerrService(services) != null)
-				val body = prepareNormalSeerrRequest(user, title, snapshot.seasons, service, snapshot.profileId, snapshot.rootFolder, snapshot.tags)
-				val receipt = api.submit(body)
+				val receipt = submitSeerrRequest(api, library, snapshot) { step -> _state.update { it.copy(submissionStep = step.label) } }
 				_state.update { it.copy(requestOpen = false, reviewing = false, needsRefresh = true,
-					title = title.copy(mediaInfo = receipt.media ?: title.mediaInfo),
-					message = "Request #${receipt.id} saved in Seerr. Open Requests to follow its status.") }
+					title = snapshot.title?.copy(mediaInfo = receipt.media ?: snapshot.title.mediaInfo),
+					message = "Confirmed request #${receipt.id} in Seerr · ${receipt.statusLabel}. Open Requests to follow its status.") }
 			} catch (error: CancellationException) { throw error }
-			catch (error: Exception) { _state.update { it.copy(requestOpen = false, reviewing = false, needsRefresh = true) }; throw error }
-			finally { _state.update { it.copy(submitting = false) } }
+			catch (error: SeerrSubmissionFailure) { _state.update { it.submissionFailed(error) } }
+			finally { _state.update { it.copy(submitting = false, submissionStep = null) } }
 		}
+	}
+	fun checkRequestStatus() = perform {
+		val snapshot = _state.value
+		val oldTitle = requireNotNull(snapshot.title)
+		val title = api.details(oldTitle.mediaType, oldTitle.id)
+		val matches = library.find(title)
+		val seasons = snapshot.seasons.intersect(title.normalRequestableSeasons().map { it.seasonNumber }.toSet())
+		_state.update { it.copy(title = title, libraryMatches = matches.getOrNull().orEmpty(), libraryChecked = matches.isSuccess,
+			exactLibraryMatch = matches.getOrNull().orEmpty().isNotEmpty(), seasons = seasons, needsRefresh = matches.isFailure,
+			reviewing = false, message = if (matches.isFailure) "Library check failed. Request status could not be fully refreshed. Please try Check status again."
+			else "Status refreshed · ${title.displayStatus()}. Seasons already requested are excluded. Review before requesting.") }
 	}
 }
