@@ -95,6 +95,8 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
 
     private LinearLayout mButtonRef;
     private View progressBar;
+    private View primarySeekControls;
+    private View secondarySeekControls;
     private boolean dpadSeekActive;
     private int dpadSeekDirection;
 
@@ -190,6 +192,10 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
             protected void onBindRowViewHolder(RowPresenter.ViewHolder vh, Object item) {
                 super.onBindRowViewHolder(vh, item);
                 progressBar = vh.view.findViewById(androidx.leanback.R.id.playback_progress);
+                ViewGroup primaryDock = vh.view.findViewById(androidx.leanback.R.id.controls_dock);
+                ViewGroup secondaryDock = vh.view.findViewById(androidx.leanback.R.id.secondary_controls_dock);
+                primarySeekControls = primaryDock == null ? null : primaryDock.getChildAt(0);
+                secondarySeekControls = secondaryDock == null ? null : secondaryDock.getChildAt(0);
                 vh.setOnKeyListener(CustomPlaybackTransportControlGlue.this);
             }
 
@@ -198,6 +204,8 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
                 cancelDpadSeekCommit();
                 super.onUnbindRowViewHolder(vh);
                 progressBar = null;
+                primarySeekControls = null;
+                secondarySeekControls = null;
                 dpadSeekActive = false;
                 vh.setOnKeyListener(null);
             }
@@ -395,6 +403,15 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
         return progressBar != null && progressBar.hasFocus();
     }
 
+    private void keepDpadSeekControlsVisible() {
+        // Leanback hides these in startSeek(). Restore them in the same UI event, before drawing,
+        // so each preview/commit keeps the action rows and injected clock in one visible state.
+        mHandler.removeCallbacks(mRefreshViewVisibility);
+        if (primarySeekControls != null) primarySeekControls.setVisibility(View.VISIBLE);
+        if (secondarySeekControls != null) secondarySeekControls.setVisibility(View.VISIBLE);
+        if (mEndsText != null) mEndsText.setVisibility(View.VISIBLE);
+    }
+
     public void previewDpadSeek(KeyEvent event) {
         if (progressBar == null || !progressBar.requestFocus()) return;
         // Re-anchor a direction change so the backward/forward lengths remain independent.
@@ -410,7 +427,7 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
             dpadSeekDirection = event.getKeyCode();
         }
         progressBar.dispatchKeyEvent(event);
-        setInjectedViewsVisibility();
+        keepDpadSeekControlsVisible();
     }
 
     public void finishDpadSeek(KeyEvent event) {
@@ -422,7 +439,7 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
             if (!dpadSeekActive || progressBar == null) return;
             dpadSeekActive = false;
             progressBar.dispatchKeyEvent(finishEvent);
-            setInjectedViewsVisibility();
+            keepDpadSeekControlsVisible();
         };
         if (event.isCanceled()) {
             dpadSeekCommitter.cancel();
