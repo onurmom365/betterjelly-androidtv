@@ -6,6 +6,7 @@ import io.mockk.every
 import io.mockk.mockk
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.Cookie
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Protocol
 import okhttp3.Request
@@ -142,5 +143,87 @@ class SeerrApiTests : FunSpec({
 		val result = api.history(4, "failed", 2)
 		result.pageInfo.pages shouldBe 3
 		result.results.single().statusLabel shouldBe "Failed"
+	}
+
+	fun savedStore() = MemorySeerrStore().apply {
+		values = listOf(Cookie.Builder().name("connect.sid").value("unit-test-session").hostOnlyDomain("192.168.1.199").path("/").build().toString())
+	}
+	test("a saved session restores in a fresh client with only a read and no new sign-in") {
+		val store = savedStore()
+		val paths = mutableListOf<String>()
+		val client = SeerrApi(store, callFactory = factory { request ->
+			request.method shouldBe "GET"
+			paths += request.url.encodedPath
+			200 to """{"id":4,"permissions":32}"""
+		})
+		checkSavedSeerrSession(client) shouldBe SeerrSessionCheck.Connected(SeerrUser(4, permissions = 32))
+		paths shouldBe listOf("/api/v1/auth/me")
+	}
+	test("no saved session asks for sign-in without contacting the server") {
+		var calls = 0
+		val client = SeerrApi(MemorySeerrStore(), callFactory = factory { calls++; 200 to "{}" })
+		checkSavedSeerrSession(client) shouldBe SeerrSessionCheck.SignInRequired
+		calls shouldBe 0
+	}
+	test("a failed session connection preserves saved cookies and can recover without signing in") {
+		val store = savedStore()
+		val saved = store.values
+		var offline = true
+		val client = SeerrApi(store, callFactory = factory {
+			if (offline) throw IOException("private transport detail")
+			200 to """{"id":4,"permissions":32}"""
+		})
+		val failed = checkSavedSeerrSession(client) as SeerrSessionCheck.Unavailable
+		failed.message.contains("private") shouldBe false
+		store.values shouldBe saved
+		offline = false
+		checkSavedSeerrSession(client) shouldBe SeerrSessionCheck.Connected(SeerrUser(4, permissions = 32))
+	}
+	test("a temporary secure-store failure neither erases the session nor forces sign-in") {
+		var unreadable = true
+		var clears = 0
+		var saved = savedStore().values
+		val original = saved
+		val store = object : SeerrSessionStore {
+			override fun read(): List<String> { if (unreadable) throw IOException("private storage detail"); return saved }
+			override fun write(cookies: List<String>) { saved = cookies }
+			override fun clear() { clears++; saved = emptyList() }
+		}
+		val client = SeerrApi(store, callFactory = factory { 200 to """{"id":4,"permissions":32}""" })
+		val failed = checkSavedSeerrSession(client) as SeerrSessionCheck.Unavailable
+		failed.message.contains("securely") shouldBe true
+		failed.message.contains("private") shouldBe false
+		clears shouldBe 0
+		saved shouldBe original
+		unreadable = false
+		checkSavedSeerrSession(client) shouldBe SeerrSessionCheck.Connected(SeerrUser(4, permissions = 32))
+	}
+	test("a saved session rejected by Seerr requires explicit sign-in rather than password or token replay") {
+		for (status in listOf(401, 403)) {
+			val store = savedStore()
+			val original = store.values
+			var calls = 0
+			val client = SeerrApi(store, callFactory = factory { request ->
+				request.method shouldBe "GET"
+				request.url.encodedPath shouldBe "/api/v1/auth/me"
+				calls++
+				status to "private error"
+			})
+			checkSavedSeerrSession(client) shouldBe SeerrSessionCheck.SignInRequired
+			calls shouldBe 1
+			store.values shouldBe original
+		}
+	}
+	test("session-check errors preserve the account and expose retry state until a confirmed result") {
+		val signedIn = SeerrUiState(user = SeerrUser(4))
+		val failed = signedIn.checkedSession(SeerrSessionCheck.Unavailable("Connection unavailable"))
+		failed.user shouldBe signedIn.user
+		failed.sessionCheckFailed shouldBe true
+		val recovered = failed.checkedSession(SeerrSessionCheck.Connected(SeerrUser(4)))
+		recovered.sessionCheckFailed shouldBe false
+		recovered.message shouldBe null
+		val rejected = failed.checkedSession(SeerrSessionCheck.SignInRequired)
+		rejected.sessionCheckFailed shouldBe false
+		rejected.user shouldBe null
 	}
 })

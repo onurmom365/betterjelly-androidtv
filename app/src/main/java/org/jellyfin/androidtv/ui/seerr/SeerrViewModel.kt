@@ -23,6 +23,7 @@ data class SeerrUiState(
 	val user: SeerrUser? = null, val busy: Boolean = false, val submitting: Boolean = false,
 	val message: String? = null, val pinCode: String? = null,
 	val restoringSession: Boolean = false,
+	val sessionCheckFailed: Boolean = false,
 	val submissionStep: String? = null,
 	val query: String = "", val type: String = "movie", val page: Int = 1, val totalPages: Int = 1,
 	val results: List<SeerrTitle> = emptyList(), val title: SeerrTitle? = null,
@@ -69,14 +70,15 @@ class SeerrViewModel(private val api: SeerrApi, private val library: SeerrLibrar
 		_state.update { it.copy(query = query, historyMode = history || it.historyMode, restoringSession = true) }
 		perform {
 			try {
-				val user = api.me()
-				_state.update { it.copy(user = user) }
-				afterLogin()
+				val checked = checkSavedSeerrSession(api)
+				_state.update { it.checkedSession(checked) }
+				if (checked is SeerrSessionCheck.Connected) afterLogin()
 			}
-			catch (error: SeerrFailure) { if (error.status !in listOf(401, 403)) throw error }
 			finally { _state.update { it.copy(restoringSession = false) } }
 		}
 	}
+	fun retrySession() = start(_state.value.query, force = true)
+	fun showSignIn() { if (!_state.value.busy) _state.update { it.copy(user = null, sessionCheckFailed = false, message = null) } }
 	private suspend fun afterLogin() {
 		val type = initialType; val id = initialId
 		if (type != null && id != null) openTitleNow(SeerrTitle(id, type))

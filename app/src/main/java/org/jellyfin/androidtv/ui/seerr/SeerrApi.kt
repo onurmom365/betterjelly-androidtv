@@ -29,7 +29,7 @@ internal val seerrJson = Json { ignoreUnknownKeys = true; explicitNulls = false 
 internal val seerrCatalogJson = Json(seerrJson) { coerceInputValues = true }
 
 class SeerrFailure(val status: Int = 0, val submissionUncertain: Boolean = false,
-	val invalidResponse: Boolean = false, val requestId: Int? = null) : IOException() {
+	val invalidResponse: Boolean = false, val requestId: Int? = null, val secureSessionUnavailable: Boolean = false) : IOException() {
 	val userMessage get() = when {
 		submissionUncertain -> (requestId?.let { "Seerr returned request #$it, but its saved record could not be confirmed. " }
 			?: "The result could not be confirmed. ") + "Check status before trying again; do not submit a duplicate."
@@ -38,13 +38,15 @@ class SeerrFailure(val status: Int = 0, val submissionUncertain: Boolean = false
 		status == 429 -> "Seerr is busy. Please try again shortly."
 		status in 300..399 -> "Seerr redirected the connection. Check the server address."
 		status > 0 -> "Seerr could not complete this action. Refresh its status or try again later."
+		secureSessionUnavailable -> "The saved Seerr session could not be opened securely. Retry the session check, or sign in again."
 		invalidResponse -> "Seerr responded, but its data could not be read. Please refresh and try again."
 		else -> "Seerr is unavailable. Library browsing and playback still work; return to your library or retry."
 	}
 }
 
 internal class SeerrCookieJar(private val origin: HttpUrl, private val store: SeerrSessionStore) : CookieJar {
-	private var cookies = store.read().mapNotNull { Cookie.parse(origin, it) }.filter { valid(it) }
+	private var cookies = emptyList<Cookie>()
+	init { try { reload() } catch (_: SeerrFailure) { /* The explicit session check exposes this without crashing the screen. */ } }
 	private fun sameOrigin(url: HttpUrl) = url.scheme == origin.scheme && url.host == origin.host && url.port == origin.port
 	private fun valid(cookie: Cookie) = cookie.domain == origin.host && cookie.expiresAt > System.currentTimeMillis()
 	@Synchronized override fun loadForRequest(url: HttpUrl): List<Cookie> =
@@ -58,7 +60,8 @@ internal class SeerrCookieJar(private val origin: HttpUrl, private val store: Se
 	}
 	@Synchronized fun clear() { cookies = emptyList(); store.clear() }
 	@Synchronized fun reload(): Boolean {
-		cookies = store.read().mapNotNull { Cookie.parse(origin, it) }.filter { valid(it) }
+		val saved = try { store.read() } catch (_: Exception) { throw SeerrFailure(secureSessionUnavailable = true) }
+		cookies = saved.mapNotNull { Cookie.parse(origin, it) }.filter { valid(it) }
 		return cookies.isNotEmpty()
 	}
 }

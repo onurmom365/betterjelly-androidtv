@@ -5,6 +5,9 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
 import java.io.File
+import java.io.FileNotFoundException
+import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import java.security.KeyStore
 import java.security.MessageDigest
 import javax.crypto.Cipher
@@ -20,8 +23,11 @@ interface SeerrSessionStore {
 
 /** AES-GCM session cookies only; no passwords or Plex tokens. Bound to the Jellyfin user and Seerr origin. */
 class AndroidSeerrSessionStore(context: Context, scope: String) : SeerrSessionStore {
+	companion object { private val locks = ConcurrentHashMap<String, Any>() }
 	private val scopeBytes = scope.toByteArray(Charsets.UTF_8)
 	private val scopeHash = MessageDigest.getInstance("SHA-256").digest(scopeBytes).joinToString("") { "%02x".format(it) }
+	// Search and details create separate store instances for the same file. AtomicFile needs a shared lock.
+	private val lock = locks.getOrPut(scopeHash) { Any() }
 	private val file = AtomicFile(File(context.noBackupFilesDir, "seerr-$scopeHash.session"))
 	private val alias = "seerr-session-$scopeHash"
 
@@ -35,24 +41,27 @@ class AndroidSeerrSessionStore(context: Context, scope: String) : SeerrSessionSt
 		}.generateKey()
 	}
 
-	@Synchronized override fun read(): List<String> = try {
-		if (!file.baseFile.exists()) emptyList()
-		else SeerrSessionCipher.decrypt(key(), file.readFully(), scopeBytes).toString(Charsets.UTF_8).lines().filter { it.isNotBlank() }
-	} catch (_: Exception) {
-		// A lost key or damaged file requires sign-in; never fall back to plaintext.
-		file.delete()
-		emptyList()
+	override fun read(): List<String> = synchronized(lock) {
+		try {
+			// openRead inside readFully also recovers AtomicFile's backup after an interrupted write.
+			val bytes = file.readFully()
+			SeerrSessionCipher.decrypt(key(), bytes, scopeBytes).toString(Charsets.UTF_8).lines().filter { it.isNotBlank() }
+		} catch (_: FileNotFoundException) { emptyList() }
+		catch (_: Exception) {
+			// Preserve encrypted data on a temporary I/O/keystore failure; retry or explicit sign-in can recover.
+			throw IOException("Secure session could not be read")
+		}
 	}
 
-	@Synchronized override fun write(cookies: List<String>) {
-		if (cookies.isEmpty()) { clear(); return }
+	override fun write(cookies: List<String>): Unit = synchronized(lock) {
+		if (cookies.isEmpty()) { clear(); return@synchronized }
 		val encrypted = SeerrSessionCipher.encrypt(key(), cookies.joinToString("\n").toByteArray(Charsets.UTF_8), scopeBytes)
 		val stream = file.startWrite()
 		try { stream.write(encrypted); file.finishWrite(stream) }
 		catch (error: Exception) { file.failWrite(stream); throw error }
 	}
 
-	@Synchronized override fun clear() = file.delete()
+	override fun clear() = synchronized(lock) { file.delete() }
 }
 
 internal object SeerrSessionCipher {

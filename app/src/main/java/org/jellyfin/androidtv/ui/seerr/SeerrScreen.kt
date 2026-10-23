@@ -70,7 +70,9 @@ private fun Badge(label: String) {
 @Composable
 fun SeerrScreen(s: SeerrUiState, model: SeerrViewModel, onBack: () -> Unit, onSearch: () -> Unit, onLibraryItem: (UUID) -> Unit) {
 	val first = remember { FocusRequester() }
-	LaunchedEffect(s.user?.id, s.title?.id) { first.requestFocus() }
+	LaunchedEffect(s.user?.id, s.title?.id, s.restoringSession) {
+		if (!s.restoringSession && s.title == null) first.requestFocus()
+	}
 	Column(Modifier.fillMaxSize().background(Ink)) {
 		Row(Modifier.fillMaxWidth().padding(horizontal = 36.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -89,6 +91,14 @@ fun SeerrScreen(s: SeerrUiState, model: SeerrViewModel, onBack: () -> Unit, onSe
 		when {
 			s.restoringSession -> Text("Checking your saved Seerr session…", color = Muted,
 				modifier = Modifier.padding(horizontal = 40.dp, vertical = 18.dp))
+			s.sessionCheckFailed -> Column(Modifier.padding(horizontal = 40.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+				Text("Unable to verify your saved Seerr session", color = Color.White, fontSize = 24.sp)
+				Text("Your saved session has been kept. Retry the connection before signing in again.", color = Muted, fontSize = 17.sp)
+				Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+					Action("Retry session", !s.busy, primary = true) { model.retrySession() }
+					Action("Sign in again", !s.busy) { model.showSignIn() }
+				}
+			}
 			s.user == null -> SignIn(s, model)
 			s.title != null -> TitleDetails(s, model, onLibraryItem)
 			s.historyMode -> RequestHistory(s, model)
@@ -146,7 +156,19 @@ private fun TitleDetails(s: SeerrUiState, model: SeerrViewModel, onLibraryItem: 
 	val title = requireNotNull(s.title)
 	val requestable = s.user?.canRequest(title.mediaType, false) == true && s.libraryChecked && !s.needsRefresh &&
 		if (title.mediaType == "movie") !s.exactLibraryMatch && title.normalMovieRequestable() else title.normalRequestableSeasons().isNotEmpty()
-	LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+	val requestFocus = remember { FocusRequester() }
+	val refreshFocus = remember { FocusRequester() }
+	val list = rememberLazyListState()
+	var initiallyFocused by remember(title.id) { mutableStateOf(false) }
+	LaunchedEffect(title.id, s.busy, s.requestOpen) {
+		if (!s.busy && !s.requestOpen && !initiallyFocused) {
+			list.scrollToItem(0)
+			withFrameNanos { }
+			if (requestable) requestFocus.requestFocus() else refreshFocus.requestFocus()
+			initiallyFocused = true
+		}
+	}
+	LazyColumn(Modifier.fillMaxSize(), state = list, verticalArrangement = Arrangement.spacedBy(16.dp)) {
 		item {
 			Box(Modifier.fillMaxWidth().heightIn(min = 310.dp)) {
 				AsyncImage(tmdbImage(title.backdropPath, "w1280"), null, Modifier.matchParentSize(), contentScale = ContentScale.Crop)
@@ -164,8 +186,9 @@ private fun TitleDetails(s: SeerrUiState, model: SeerrViewModel, onLibraryItem: 
 							if (title.voteAverage > 0) Text("★ ${String.format(Locale.US, "%.1f", title.voteAverage)}", color = Color(0xFFFFD477), fontSize = 16.sp)
 						}
 						Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-							Action(if (title.mediaType == "tv") "Request seasons" else "Request movie", !s.busy && requestable, primary = true) { model.beginRequest() }
-							Action("Refresh status", !s.busy) { model.openTitle(title) }
+							Action(if (title.mediaType == "tv") "Request seasons" else "Request movie", !s.busy && requestable,
+								primary = true, modifier = Modifier.focusRequester(requestFocus)) { model.beginRequest() }
+							Action("Refresh status", !s.busy, modifier = Modifier.focusRequester(refreshFocus)) { model.openTitle(title) }
 						}
 					}
 				}
@@ -268,7 +291,26 @@ private fun RequestDialog(s: SeerrUiState, model: SeerrViewModel) {
 	val title = requireNotNull(s.title)
 	var picker by remember { mutableStateOf<Picker?>(null) }
 	val cancelFocus = remember { FocusRequester() }
-	LaunchedEffect(s.reviewing) { cancelFocus.requestFocus() }
+	val seasonFocus = remember { FocusRequester() }
+	val requestableSeasons = title.normalRequestableSeasons()
+	val initialSeason = requestableSeasons.find { it.seasonNumber == 1 }
+		?: requestableSeasons.filter { it.seasonNumber > 0 }.minByOrNull { it.seasonNumber }
+		?: requestableSeasons.firstOrNull()
+	val list = rememberLazyListState()
+	val seasonList = rememberLazyListState()
+	var initiallyFocused by remember(title.id, s.reviewing) { mutableStateOf(false) }
+	LaunchedEffect(s.reviewing, s.busy) {
+		if (!s.busy && !initiallyFocused) {
+			withFrameNanos { }
+			if (!s.reviewing && !s.needsRefresh && initialSeason != null && title.mediaType == "tv") {
+				list.scrollToItem(0)
+				seasonList.scrollToItem(requestableSeasons.indexOf(initialSeason) + 1)
+				withFrameNanos { }
+				seasonFocus.requestFocus()
+			} else cancelFocus.requestFocus()
+			initiallyFocused = true
+		}
+	}
 	Dialog(onDismissRequest = { if (!s.submitting) model.back() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
 		Column(Modifier.widthIn(max = 780.dp).fillMaxWidth(0.9f).heightIn(max = 492.dp).clip(Shape).background(Panel).border(1.dp, Line, Shape)) {
 			Box(Modifier.fillMaxWidth().height(112.dp)) {
@@ -283,7 +325,7 @@ private fun RequestDialog(s: SeerrUiState, model: SeerrViewModel) {
 				modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp))
 			s.message?.let { message -> Text(message, color = Color(0xFFFFC588), fontSize = 14.sp,
 				modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp)) }
-			LazyColumn(Modifier.weight(1f, fill = false).padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+			LazyColumn(Modifier.weight(1f, fill = false).padding(horizontal = 24.dp), state = list, verticalArrangement = Arrangement.spacedBy(14.dp)) {
 				if (s.busy && !s.submitting) item { Text("Loading request options…", color = Muted) }
 				if (s.reviewing) {
 					item { Summary("Destination", s.service?.server?.name ?: "Seerr default") }
@@ -296,11 +338,12 @@ private fun RequestDialog(s: SeerrUiState, model: SeerrViewModel) {
 				} else {
 					if (title.mediaType == "tv") {
 						item { Text("Seasons · ${s.seasons.size} selected", color = Muted, fontSize = 14.sp) }
-						item { LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+						item { LazyRow(state = seasonList, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
 							item { Action("All missing", !s.busy) { model.allSeasons() } }
-							items(title.normalRequestableSeasons(), key = { it.seasonNumber }) { season ->
+							items(requestableSeasons, key = { it.seasonNumber }) { season ->
 								Action(if (season.seasonNumber == 0) "Specials" else "Season ${season.seasonNumber}", !s.busy,
-									selected = season.seasonNumber in s.seasons) { model.season(season.seasonNumber) }
+									selected = season.seasonNumber in s.seasons,
+									modifier = if (season == initialSeason) Modifier.focusRequester(seasonFocus) else Modifier) { model.season(season.seasonNumber) }
 							}
 						} }
 					}
