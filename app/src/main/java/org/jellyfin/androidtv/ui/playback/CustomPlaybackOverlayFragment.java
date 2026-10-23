@@ -138,6 +138,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
     private final Lazy<ImageHelper> imageHelper = inject(ImageHelper.class);
 
     private final PlaybackOverlayFragmentHelper helper = new PlaybackOverlayFragmentHelper(this);
+    private final DpadSeekKeyHandler dpadSeekKeyHandler = new DpadSeekKeyHandler();
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -475,6 +476,21 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
     private View.OnKeyListener keyListener = new View.OnKeyListener() {
         @Override
         public boolean onKey(View v, int keyCode, KeyEvent event) {
+            PlaybackController controller = playbackControllerContainer.getValue().getPlaybackController();
+            boolean allowDpadSeek = controller != null && controller.canSeek()
+                    && binding != null && leanbackOverlayFragment != null
+                    && !mIsVisible && !leanbackOverlayFragment.isControlsOverlayVisible()
+                    && !mGuideVisible && !mPopupPanelVisible && !binding.skipOverlay.getVisible();
+            DpadSeekKeyHandler.Result seekKey = dpadSeekKeyHandler.onKey(
+                    keyCode, event.getAction(), event.getRepeatCount(), event.getDownTime(), allowDpadSeek);
+            if (seekKey != DpadSeekKeyHandler.Result.PASS) {
+                if (leanbackOverlayFragment != null) leanbackOverlayFragment.setShouldShowOverlay(false);
+                if (seekKey == DpadSeekKeyHandler.Result.FORWARD || seekKey == DpadSeekKeyHandler.Result.REWIND) {
+                    controller.skipImmediately(seekKey == DpadSeekKeyHandler.Result.FORWARD);
+                }
+                return true;
+            }
+
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
                 if (!mGuideVisible)
                     leanbackOverlayFragment.setShouldShowOverlay(true);
@@ -687,6 +703,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
     @Override
     public void onPause() {
         super.onPause();
+        dpadSeekKeyHandler.reset();
         if (mItemsToPlay == null || mItemsToPlay.isEmpty()) return;
 
         setPlayPauseActionState(0);

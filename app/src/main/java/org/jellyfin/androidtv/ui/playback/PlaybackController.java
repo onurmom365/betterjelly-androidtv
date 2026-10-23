@@ -924,6 +924,13 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         skip(-prefs.get(UserSettingPreferences.Companion.getSkipBackLength()));
     }
 
+    public void skipImmediately(boolean forward) {
+        UserSettingPreferences prefs = KoinJavaComponent.<UserSettingPreferences>get(UserSettingPreferences.class);
+        int amount = forward ? prefs.get(UserSettingPreferences.Companion.getSkipForwardLength())
+                : -prefs.get(UserSettingPreferences.Companion.getSkipBackLength());
+        skip(amount, 0);
+    }
+
     public void seek(long pos) {
         seek(pos, false);
     }
@@ -1025,6 +1032,10 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     };
 
     private void skip(int msec) {
+        skip(msec, 800);
+    }
+
+    private void skip(int msec, int delayMs) {
         if (hasInitializedVideoManager() && (isPlaying() || isPaused()) && spinnerOff && mVideoManager.getCurrentPosition() > 0) { //guard against skipping before playback has truly begun
             mHandler.removeCallbacks(skipRunnable);
             refreshCurrentPosition();
@@ -1034,7 +1045,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             Timber.i("Duration reported as: %s current pos: %s", getDuration(), mCurrentPosition);
 
             mSeekPosition = currentSkipPos;
-            mHandler.postDelayed(skipRunnable, 800);
+            mHandler.postDelayed(skipRunnable, delayMs);
         }
     }
 
