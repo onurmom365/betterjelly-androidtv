@@ -2,12 +2,13 @@ package org.jellyfin.androidtv.ui.playback;
 
 import android.view.KeyEvent;
 
-/** Keeps a hidden-controls seek press from also reaching Leanback on repeat or release. */
+/** Routes each D-pad seek gesture to a preview followed by one automatic commit. */
 final class DpadSeekKeyHandler {
-    enum Result { PASS, CONSUMED, REWIND, FORWARD }
+    enum Result { PASS, CONSUMED, REWIND, FORWARD, FINISH }
 
     private static final long NO_PRESS = Long.MIN_VALUE;
     private final long[] downTimes = {NO_PRESS, NO_PRESS};
+    private final int[] repeatCounts = {0, 0};
 
     Result onKey(int keyCode, int action, int repeatCount, long downTime, boolean allowSeek) {
         final int direction;
@@ -23,14 +24,19 @@ final class DpadSeekKeyHandler {
         if (action == KeyEvent.ACTION_UP) {
             if (!tracked) return Result.PASS;
             downTimes[direction] = NO_PRESS;
-            return Result.CONSUMED;
+            return Result.FINISH;
         }
         if (action != KeyEvent.ACTION_DOWN) return Result.PASS;
-        if (tracked) return Result.CONSUMED;
+        if (tracked) {
+            if (!allowSeek || repeatCount <= repeatCounts[direction]) return Result.CONSUMED;
+            repeatCounts[direction] = repeatCount;
+            return direction == 0 ? Result.REWIND : Result.FORWARD;
+        }
         // Never take over a hold that began while navigating the visible controls.
         if (repeatCount != 0 || !allowSeek) return Result.PASS;
 
         downTimes[direction] = downTime;
+        repeatCounts[direction] = 0;
         return direction == 0 ? Result.REWIND : Result.FORWARD;
     }
 

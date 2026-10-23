@@ -24,6 +24,7 @@ import androidx.leanback.widget.RowPresenter;
 
 import org.jellyfin.androidtv.R;
 import org.jellyfin.androidtv.preference.UserPreferences;
+import org.jellyfin.androidtv.preference.UserSettingPreferences;
 import org.jellyfin.androidtv.preference.constant.ClockBehavior;
 import org.jellyfin.androidtv.ui.playback.PlaybackController;
 import org.jellyfin.androidtv.ui.playback.overlay.action.AndroidAction;
@@ -82,6 +83,8 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
     private Runnable mRefreshViewVisibility;
 
     private LinearLayout mButtonRef;
+    private View progressBar;
+    private boolean dpadSeekActive;
 
     CustomPlaybackTransportControlGlue(Context context, VideoPlayerAdapter playerAdapter, PlaybackController playbackController) {
         super(context, playerAdapter);
@@ -173,12 +176,15 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
             @Override
             protected void onBindRowViewHolder(RowPresenter.ViewHolder vh, Object item) {
                 super.onBindRowViewHolder(vh, item);
+                progressBar = vh.view.findViewById(androidx.leanback.R.id.playback_progress);
                 vh.setOnKeyListener(CustomPlaybackTransportControlGlue.this);
             }
 
             @Override
             protected void onUnbindRowViewHolder(RowPresenter.ViewHolder vh) {
                 super.onUnbindRowViewHolder(vh);
+                progressBar = null;
+                dpadSeekActive = false;
                 vh.setOnKeyListener(null);
             }
         };
@@ -369,6 +375,34 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
             mEndsText.setVisibility(mButtonRef.getVisibility());
         mHandler.removeCallbacks(mRefreshViewVisibility);
         mHandler.postDelayed(mRefreshViewVisibility, 100);
+    }
+
+    public boolean isProgressBarFocused() {
+        return progressBar != null && progressBar.hasFocus();
+    }
+
+    public void previewDpadSeek(KeyEvent event) {
+        if (progressBar == null || !progressBar.requestFocus()) return;
+        if (!dpadSeekActive) {
+            if (getSeekProvider() instanceof CustomSeekProvider) {
+                UserSettingPreferences prefs = KoinJavaComponent.<UserSettingPreferences>get(UserSettingPreferences.class);
+                ((CustomSeekProvider) getSeekProvider()).setRelativeSeekAnchor(
+                        getControlsRow().getCurrentPosition(), prefs.get(UserSettingPreferences.Companion.getSkipBackLength()));
+            }
+            dpadSeekActive = true;
+        }
+        progressBar.dispatchKeyEvent(event);
+        setInjectedViewsVisibility();
+    }
+
+    public void finishDpadSeek(KeyEvent event) {
+        if (!dpadSeekActive || progressBar == null) return;
+        dpadSeekActive = false;
+        // Finish through Leanback's public input path to close thumbnail mode and restore playback.
+        int finishKey = event.isCanceled() ? KeyEvent.KEYCODE_BACK : KeyEvent.KEYCODE_DPAD_CENTER;
+        progressBar.dispatchKeyEvent(new KeyEvent(event.getDownTime(), event.getEventTime(),
+                KeyEvent.ACTION_UP, finishKey, 0));
+        setInjectedViewsVisibility();
     }
 
     @Override

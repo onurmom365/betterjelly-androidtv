@@ -479,14 +479,21 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
             PlaybackController controller = playbackControllerContainer.getValue().getPlaybackController();
             boolean allowDpadSeek = controller != null && controller.canSeek()
                     && binding != null && leanbackOverlayFragment != null
-                    && !mIsVisible && !leanbackOverlayFragment.isControlsOverlayVisible()
+                    && leanbackOverlayFragment.getPlayerGlue() != null
+                    && ((!mIsVisible && !leanbackOverlayFragment.isControlsOverlayVisible())
+                        || leanbackOverlayFragment.getPlayerGlue().isProgressBarFocused())
                     && !mGuideVisible && !mPopupPanelVisible && !binding.skipOverlay.getVisible();
             DpadSeekKeyHandler.Result seekKey = dpadSeekKeyHandler.onKey(
                     keyCode, event.getAction(), event.getRepeatCount(), event.getDownTime(), allowDpadSeek);
             if (seekKey != DpadSeekKeyHandler.Result.PASS) {
-                if (leanbackOverlayFragment != null) leanbackOverlayFragment.setShouldShowOverlay(false);
                 if (seekKey == DpadSeekKeyHandler.Result.FORWARD || seekKey == DpadSeekKeyHandler.Result.REWIND) {
-                    controller.skipImmediately(seekKey == DpadSeekKeyHandler.Result.FORWARD);
+                    leanbackOverlayFragment.setShouldShowOverlay(true);
+                    leanbackOverlayFragment.showControlsOverlay(false);
+                    leanbackOverlayFragment.getPlayerGlue().previewDpadSeek(event);
+                    setFadingEnabled(false);
+                } else if (seekKey == DpadSeekKeyHandler.Result.FINISH && leanbackOverlayFragment != null) {
+                    leanbackOverlayFragment.getPlayerGlue().finishDpadSeek(event);
+                    setFadingEnabled(true);
                 }
                 return true;
             }
