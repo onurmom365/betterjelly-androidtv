@@ -22,6 +22,7 @@ import kotlin.coroutines.coroutineContext
 data class SeerrUiState(
 	val user: SeerrUser? = null, val busy: Boolean = false, val submitting: Boolean = false,
 	val message: String? = null, val pinCode: String? = null,
+	val restoringSession: Boolean = false,
 	val submissionStep: String? = null,
 	val query: String = "", val type: String = "movie", val page: Int = 1, val totalPages: Int = 1,
 	val results: List<SeerrTitle> = emptyList(), val title: SeerrTitle? = null,
@@ -43,7 +44,7 @@ data class SeerrUiState(
 }
 
 class SeerrViewModel(private val api: SeerrApi, private val library: SeerrLibrary) : ViewModel() {
-	private val _state = MutableStateFlow(SeerrUiState())
+	private val _state = MutableStateFlow(SeerrUiState(restoringSession = true))
 	val state = _state.asStateFlow()
 	private var action: Job? = null
 	private var started = false
@@ -65,7 +66,7 @@ class SeerrViewModel(private val api: SeerrApi, private val library: SeerrLibrar
 		if (started && !force) return
 		started = true
 		if (type != null && id != null) { initialType = type; initialId = id }
-		_state.update { it.copy(query = query, historyMode = history || it.historyMode) }
+		_state.update { it.copy(query = query, historyMode = history || it.historyMode, restoringSession = true) }
 		perform {
 			try {
 				val user = api.me()
@@ -73,6 +74,7 @@ class SeerrViewModel(private val api: SeerrApi, private val library: SeerrLibrar
 				afterLogin()
 			}
 			catch (error: SeerrFailure) { if (error.status !in listOf(401, 403)) throw error }
+			finally { _state.update { it.copy(restoringSession = false) } }
 		}
 	}
 	private suspend fun afterLogin() {
@@ -102,8 +104,9 @@ class SeerrViewModel(private val api: SeerrApi, private val library: SeerrLibrar
 	fun cancelPlex() { if (_state.value.pinCode != null) leave() }
 	fun leave() {
 		if (_state.value.submitting) return
+		if (_state.value.restoringSession) started = false
 		action?.cancel()
-		_state.update { it.copy(busy = false, pinCode = null) }
+		_state.update { it.copy(busy = false, pinCode = null, restoringSession = false) }
 	}
 	fun disconnect() {
 		if (_state.value.busy) return

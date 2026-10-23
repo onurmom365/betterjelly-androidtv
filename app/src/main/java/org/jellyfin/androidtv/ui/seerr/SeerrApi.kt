@@ -18,12 +18,10 @@ import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.IOException
-import java.util.concurrent.TimeUnit
 
 const val SEERR_ORIGIN = "http://192.168.1.199:5055"
 internal val seerrJson = Json { ignoreUnknownKeys = true; explicitNulls = false }
@@ -72,11 +70,8 @@ class SeerrApi internal constructor(
 ) {
 	private val origin = SEERR_ORIGIN.toHttpUrl()
 	private val jar = SeerrCookieJar(origin, store)
-	// Dedicated client: never inherits Jellyfin headers, logging, redirects or automatic POST retries.
-	private val client = OkHttpClient.Builder().cookieJar(jar).followRedirects(false).followSslRedirects(false)
-		.retryOnConnectionFailure(false).connectTimeout(8, TimeUnit.SECONDS).readTimeout(12, TimeUnit.SECONDS)
-		.callTimeout(15, TimeUnit.SECONDS).build()
-	private val plexClient = client.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
+	// Dedicated transport: GET connection recovery, single-attempt mutations, no Jellyfin headers/logging.
+	private val transport = SeerrTransport(jar)
 
 	private suspend fun exchange(request: Request, plex: Boolean = false, submitting: Boolean = false): String =
 		suspendCancellableCoroutine { continuation ->
@@ -84,7 +79,7 @@ class SeerrApi internal constructor(
 				continuation.resumeWith(Result.failure(SeerrFailure(403)))
 				return@suspendCancellableCoroutine
 			}
-			val call = (callFactory ?: if (plex) plexClient else client).newCall(request)
+			val call = callFactory?.newCall(request) ?: if (plex) transport.plexCall(request) else transport.newCall(request)
 			continuation.invokeOnCancellation { call.cancel() }
 			call.enqueue(object : Callback {
 				override fun onFailure(call: Call, e: IOException) {

@@ -87,6 +87,8 @@ fun SeerrScreen(s: SeerrUiState, model: SeerrViewModel, onBack: () -> Unit, onSe
 			modifier = Modifier.padding(start = 40.dp, bottom = 8.dp))
 		s.message?.let { Message(it) }
 		when {
+			s.restoringSession -> Text("Checking your saved Seerr session…", color = Muted,
+				modifier = Modifier.padding(horizontal = 40.dp, vertical = 18.dp))
 			s.user == null -> SignIn(s, model)
 			s.title != null -> TitleDetails(s, model, onLibraryItem)
 			s.historyMode -> RequestHistory(s, model)
