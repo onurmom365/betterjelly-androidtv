@@ -4,43 +4,40 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import org.jellyfin.sdk.model.api.BaseItemDto
 import java.util.UUID
 import kotlin.coroutines.coroutineContext
 
 data class SeerrUiState(
-	val user: SeerrUser? = null,
-	val busy: Boolean = false,
-	val submitting: Boolean = false,
-	val message: String? = null,
-	val pinCode: String? = null,
-	val query: String = "",
-	val type: String = "movie",
-	val page: Int = 1,
-	val totalPages: Int = 1,
-	val results: List<SeerrTitle> = emptyList(),
-	val title: SeerrTitle? = null,
-	val libraryMatches: List<BaseItemDto> = emptyList(),
-	val libraryChecked: Boolean = false,
-	val exactLibraryMatch: Boolean = false,
-	val is4k: Boolean = false,
-	val seasons: Set<Int> = emptySet(),
-	val services: List<SeerrService>? = null,
-	val service: SeerrServiceDetails? = null,
-	val profileId: Int? = null,
-	val rootFolder: String? = null,
-	val reviewing: Boolean = false,
-	val needsRefresh: Boolean = false,
+	val user: SeerrUser? = null, val busy: Boolean = false, val submitting: Boolean = false,
+	val message: String? = null, val pinCode: String? = null,
+	val query: String = "", val type: String = "movie", val page: Int = 1, val totalPages: Int = 1,
+	val results: List<SeerrTitle> = emptyList(), val title: SeerrTitle? = null,
+	val libraryMatches: List<BaseItemDto> = emptyList(), val libraryChecked: Boolean = false, val exactLibraryMatch: Boolean = false,
+	val is4k: Boolean = false, val seasons: Set<Int> = emptySet(),
+	val services: List<SeerrService> = emptyList(), val service: SeerrServiceDetails? = null,
+	val profileId: Int? = null, val rootFolder: String? = null, val tags: Set<Int>? = null,
+	val optionsLoaded: Boolean = false, val requestOpen: Boolean = false, val reviewing: Boolean = false, val needsRefresh: Boolean = false,
+	val historyMode: Boolean = false, val historyFilter: String = "all", val historyPage: Int = 1, val historyPages: Int = 1,
+	val history: List<SeerrHistoryEntry> = emptyList(), val historyWarning: String? = null,
 ) {
+	val effectiveTags get() = tags ?: service?.server?.activeTags.orEmpty().toSet()
 	fun requestBody(): SeerrRequestBody? = runCatching {
-		require(libraryChecked && !needsRefresh && !(exactLibraryMatch && title?.mediaType == "movie"))
-		prepareSeerrRequest(requireNotNull(user), requireNotNull(title), is4k, seasons, service, profileId, rootFolder)
+		require(!is4k && optionsLoaded && libraryChecked && !needsRefresh && !(exactLibraryMatch && title?.mediaType == "movie"))
+		val account = requireNotNull(user)
+		if (account.canChooseService) require(service != null)
+		prepareNormalSeerrRequest(account, requireNotNull(title), seasons, service, profileId, rootFolder, tags)
 	}.getOrNull()
 }
 
@@ -49,6 +46,8 @@ class SeerrViewModel(private val api: SeerrApi, private val library: SeerrLibrar
 	val state = _state.asStateFlow()
 	private var action: Job? = null
 	private var started = false
+	private var initialType: String? = null
+	private var initialId: Int? = null
 	private val plexIdentifier = UUID.randomUUID().toString()
 
 	private fun perform(block: suspend () -> Unit) {
@@ -57,52 +56,49 @@ class SeerrViewModel(private val api: SeerrApi, private val library: SeerrLibrar
 		action = viewModelScope.launch {
 			try { block() }
 			catch (error: CancellationException) { throw error }
-			catch (error: Exception) { _state.update { it.copy(message = (error as? SeerrFailure)?.userMessage ?: "This action could not be completed. Please retry.") } }
+			catch (error: Exception) { _state.update { it.copy(message = (error as? SeerrFailure)?.userMessage ?: "This action could not be completed. Please refresh and retry.") } }
 			finally { if (coroutineContext.isActive) _state.update { it.copy(busy = false, pinCode = null) } }
 		}
 	}
-
-	fun start(query: String, force: Boolean = false) {
+	fun start(query: String, force: Boolean = false, type: String? = null, id: Int? = null, history: Boolean = false) {
 		if (started && !force) return
 		started = true
+		if (type != null && id != null) { initialType = type; initialId = id }
+		_state.update { it.copy(query = query, historyMode = history || it.historyMode) }
 		perform {
-		_state.update { it.copy(query = query) }
-		try {
-			val user = api.me()
-			_state.update { it.copy(user = user) }
-			browseNow(query, "movie", 1)
-		} catch (error: SeerrFailure) {
-			if (error.status !in listOf(401, 403)) throw error
-		}
+			try {
+				val user = api.me()
+				_state.update { it.copy(user = user) }
+				afterLogin()
+			}
+			catch (error: SeerrFailure) { if (error.status !in listOf(401, 403)) throw error }
 		}
 	}
-
+	private suspend fun afterLogin() {
+		val type = initialType; val id = initialId
+		if (type != null && id != null) openTitleNow(SeerrTitle(id, type))
+		else if (_state.value.historyMode) historyNow(_state.value.historyFilter, 1)
+		else browseNow(_state.value.query, "movie", 1)
+	}
 	fun login(email: String, password: String) = perform {
 		val user = api.login(email.trim(), password)
 		_state.update { it.copy(user = user) }
-		browseNow(_state.value.query, _state.value.type, 1)
+		afterLogin()
 	}
-
 	fun loginPlex() = perform {
 		val pin = api.startPlex(plexIdentifier)
 		_state.update { it.copy(pinCode = pin.code) }
-		repeat((pin.expiresIn.coerceIn(10, 600) / 2)) {
+		repeat(pin.expiresIn.coerceIn(10, 600) / 2) {
 			delay(2_000)
 			if (api.checkPlex(pin, plexIdentifier)) {
 				val user = api.me()
 				_state.update { it.copy(user = user, pinCode = null) }
-				browseNow(_state.value.query, _state.value.type, 1)
-				return@perform
+				afterLogin(); return@perform
 			}
 		}
-		_state.update { it.copy(message = "Plex code expired. Choose Sign in with Plex to try again.") }
+		_state.update { it.copy(message = "Plex code expired. Please try again.") }
 	}
-
-	fun cancelPlex() {
-		if (_state.value.pinCode == null) return
-		action?.cancel()
-		_state.update { it.copy(busy = false, pinCode = null) }
-	}
+	fun cancelPlex() { if (_state.value.pinCode != null) leave() }
 	fun leave() {
 		if (_state.value.submitting) return
 		action?.cancel()
@@ -110,79 +106,121 @@ class SeerrViewModel(private val api: SeerrApi, private val library: SeerrLibrar
 	}
 	fun disconnect() {
 		if (_state.value.busy) return
-		api.disconnect() // Forget this app's session only; no server logout/device deletion.
-		_state.value = SeerrUiState()
+		api.disconnect()
+		_state.value = SeerrUiState(historyMode = true)
 	}
 	fun browse(query: String, type: String, page: Int = 1) = perform { browseNow(query, type, page) }
 	private suspend fun browseNow(query: String, type: String, page: Int) {
 		val result = api.titles(query, type, page)
-		_state.update { it.copy(query = query, type = type, page = page, totalPages = result.totalPages, results = result.results, title = null, reviewing = false) }
+		_state.update { it.copy(query = query, type = type, page = page, totalPages = result.totalPages, results = result.results,
+			title = null, historyMode = false, requestOpen = false, reviewing = false) }
 	}
-
 	fun openTitle(title: SeerrTitle) = perform { openTitleNow(title) }
 	private suspend fun openTitleNow(title: SeerrTitle) {
 		val details = api.details(title.mediaType, title.id)
 		val matches = library.find(details)
-		val exact = matches.getOrNull().orEmpty().isNotEmpty()
-		_state.update {
-			it.copy(title = details, libraryMatches = matches.getOrNull().orEmpty(), libraryChecked = matches.isSuccess,
-				exactLibraryMatch = exact, is4k = false, seasons = emptySet(), services = null, service = null,
-				profileId = null, rootFolder = null, reviewing = false, needsRefresh = false,
-				message = if (matches.isFailure) "Library check unavailable. Refresh this title before requesting." else null)
-		}
+		_state.update { it.copy(title = details, libraryMatches = matches.getOrNull().orEmpty(), libraryChecked = matches.isSuccess,
+			exactLibraryMatch = matches.getOrNull().orEmpty().isNotEmpty(), is4k = false, seasons = emptySet(), services = emptyList(),
+			service = null, profileId = null, rootFolder = null, tags = null, requestOpen = false, reviewing = false,
+			optionsLoaded = false, needsRefresh = false, message = if (matches.isFailure) "Library check unavailable. Refresh before requesting." else null) }
 	}
 	fun back() {
 		if (_state.value.submitting) return
 		leave()
-		_state.update { if (it.reviewing) it.copy(reviewing = false) else it.copy(title = null, message = null) }
+		_state.update { when {
+			it.reviewing -> it.copy(reviewing = false)
+			it.requestOpen -> it.copy(requestOpen = false)
+			else -> it.copy(title = null, message = null)
+		} }
 	}
-	fun quality(is4k: Boolean) {
-		if (_state.value.busy) return
-		_state.update { it.copy(is4k = is4k, seasons = emptySet(), services = null, service = null, profileId = null, rootFolder = null, reviewing = false) }
+	fun beginRequest() = perform {
+		val s = _state.value
+		val title = requireNotNull(s.title)
+		val user = requireNotNull(s.user)
+		require(user.canRequest(title.mediaType, false))
+		val services = normalSeerrServices(api.services(title.mediaType))
+		if (services.isEmpty()) {
+			_state.update { it.copy(message = "Seerr has no normal ${if (title.mediaType == "movie") "Radarr" else "Sonarr"} destination. Check its service settings before requesting.") }
+			return@perform
+		}
+		val default = defaultSeerrService(services)
+		if (!user.canChooseService && default == null) {
+			_state.update { it.copy(message = "A default request destination must be configured in Seerr.") }
+			return@perform
+		}
+		_state.update { it.copy(services = services, requestOpen = true, reviewing = false, optionsLoaded = !user.canChooseService) }
+		if (user.canChooseService && default != null) selectServiceNow(default)
+	}
+	private suspend fun selectServiceNow(service: SeerrService) {
+		val details = api.service(requireNotNull(_state.value.title).mediaType, service.id)
+		require(!details.server.is4k)
+		_state.update { it.copy(service = details, tags = null, optionsLoaded = true,
+			profileId = details.server.activeProfileId?.takeIf { id -> details.profiles.any { it.id == id } },
+			rootFolder = details.server.activeDirectory?.takeIf { path -> details.rootFolders.any { it.path == path } }) }
+	}
+	fun service(service: SeerrService) = perform {
+		require(_state.value.services.any { it.id == service.id && !it.is4k })
+		selectServiceNow(service)
 	}
 	fun season(number: Int) {
-		if (_state.value.busy) return
-		_state.update { it.copy(seasons = if (number in it.seasons) it.seasons - number else it.seasons + number) }
+		if (!_state.value.busy) _state.update { it.copy(seasons = if (number in it.seasons) it.seasons - number else it.seasons + number) }
 	}
-	fun advanced() = perform {
-		val s = _state.value
-		if (s.user?.canChooseService != true) return@perform
-		val list = api.services(requireNotNull(s.title).mediaType).filter { it.is4k == s.is4k }
-		_state.update { it.copy(services = list) }
-	}
-	fun service(service: SeerrService?) {
-		if (_state.value.busy) return
-		if (service == null) { _state.update { it.copy(service = null, profileId = null, rootFolder = null) }; return }
-		perform {
-			val details = api.service(requireNotNull(_state.value.title).mediaType, service.id)
-			_state.update { it.copy(service = details,
-				profileId = details.server.activeProfileId?.takeIf { id -> details.profiles.any { it.id == id } },
-				rootFolder = details.server.activeDirectory?.takeIf { path -> details.rootFolders.any { it.path == path } }) }
-		}
+	fun allSeasons() {
+		if (!_state.value.busy) _state.update { it.copy(seasons = it.title?.normalRequestableSeasons().orEmpty().filter { it.seasonNumber > 0 }.map { it.seasonNumber }.toSet()) }
 	}
 	fun profile(id: Int) { if (!_state.value.busy) _state.update { it.copy(profileId = id) } }
 	fun root(path: String) { if (!_state.value.busy) _state.update { it.copy(rootFolder = path) } }
-	fun review() { if (_state.value.requestBody() != null && !_state.value.busy) _state.update { it.copy(reviewing = true) } }
+	fun tag(id: Int) {
+		if (!_state.value.busy) _state.update {
+			val tags = it.effectiveTags
+			it.copy(tags = if (id in tags) tags - id else tags + id)
+		}
+	}
+	fun defaultTags() { if (!_state.value.busy) _state.update { it.copy(tags = null) } }
+	fun review() { if (!_state.value.busy && _state.value.requestBody() != null) _state.update { it.copy(reviewing = true) } }
+	fun history(filter: String = "all", page: Int = 1) = perform { historyNow(filter, page) }
+	private suspend fun historyNow(filter: String, page: Int) {
+		val result = api.history(requireNotNull(_state.value.user).id, filter, page)
+		val limiter = Semaphore(3)
+		val entries = coroutineScope { result.results.map { request -> async {
+			val media = request.media
+			val type = media?.mediaType?.ifBlank { request.type } ?: request.type
+			val title = if (media != null && media.tmdbId > 0 && type in listOf("movie", "tv")) limiter.withPermit {
+				try { api.details(type, media.tmdbId) }
+				catch (error: CancellationException) { throw error }
+				catch (_: Exception) { null }
+			} else null
+			SeerrHistoryEntry(request, title)
+		} }.awaitAll() }
+		_state.update { it.copy(historyMode = true, title = null, requestOpen = false, reviewing = false, history = entries,
+			historyFilter = filter, historyPage = page, historyPages = result.pageInfo.pages,
+			historyWarning = if (result.serviceErrors.radarr.isNotEmpty() || result.serviceErrors.sonarr.isNotEmpty())
+				"Seerr reports a connection problem with a download manager. A saved request may not have reached it." else null) }
+	}
 	fun submit() {
 		val snapshot = _state.value
 		if (snapshot.busy || !snapshot.reviewing || snapshot.requestBody() == null) return
 		perform {
 			_state.update { it.copy(submitting = true) }
 			try {
-				// Re-read permissions and availability immediately before the one POST; Seerr remains approval/quota authority.
 				val user = api.me()
 				val title = api.details(requireNotNull(snapshot.title).mediaType, snapshot.title.id)
-				val libraryItems = library.find(title).getOrElse { throw SeerrFailure() }
-				require(title.mediaType != "movie" || libraryItems.isEmpty())
-				val service = snapshot.service?.let { api.service(title.mediaType, it.server.id) }
-				val body = prepareSeerrRequest(user, title, snapshot.is4k, snapshot.seasons, service, snapshot.profileId, snapshot.rootFolder)
+				val local = library.find(title).getOrElse { throw SeerrFailure() }
+				require(title.mediaType != "movie" || local.isEmpty())
+				val services = normalSeerrServices(api.services(title.mediaType))
+				require(services.isNotEmpty())
+				val service = snapshot.service?.let { selected ->
+					require(services.any { it.id == selected.server.id })
+					api.service(title.mediaType, selected.server.id)
+				}
+				if (service == null) require(defaultSeerrService(services) != null)
+				val body = prepareNormalSeerrRequest(user, title, snapshot.seasons, service, snapshot.profileId, snapshot.rootFolder, snapshot.tags)
 				val receipt = api.submit(body)
-				_state.update { it.copy(reviewing = false, needsRefresh = true, message = "Request #${receipt.id}: ${receipt.statusLabel}. Refresh to see availability.") }
+				_state.update { it.copy(requestOpen = false, reviewing = false, needsRefresh = true,
+					title = title.copy(mediaInfo = receipt.media ?: title.mediaInfo),
+					message = "Request #${receipt.id} saved in Seerr. Open Requests to follow its status.") }
 			} catch (error: CancellationException) { throw error }
-			catch (error: Exception) {
-				_state.update { it.copy(reviewing = false, needsRefresh = true) }
-				throw error
-			}
+			catch (error: Exception) { _state.update { it.copy(requestOpen = false, reviewing = false, needsRefresh = true) }; throw error }
 			finally { _state.update { it.copy(submitting = false) } }
 		}
 	}

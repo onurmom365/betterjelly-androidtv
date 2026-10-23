@@ -37,7 +37,8 @@ object Destinations {
 	fun search(query: String? = null) = fragmentDestination<SearchFragment>(
 		SearchFragment.EXTRA_QUERY to query,
 	)
-	fun seerr(query: String? = null) = fragmentDestination<SeerrFragment>("query" to query)
+	fun seerr(query: String? = null, type: String? = null, id: Int? = null, history: Boolean = false) =
+		fragmentDestination<SeerrFragment>("query" to query, "type" to type, "mediaId" to id, "history" to history)
 
 	// Browsing
 	// TODO only pass item id instead of complete JSON to browsing destinations

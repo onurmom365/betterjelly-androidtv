@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,6 +31,15 @@ import androidx.compose.ui.unit.dp
 import androidx.fragment.app.Fragment
 import androidx.fragment.compose.AndroidFragment
 import androidx.fragment.compose.content
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import org.jellyfin.androidtv.auth.repository.SessionRepository
+import org.jellyfin.androidtv.ui.seerr.SeerrSearchViewModel
+import org.jellyfin.androidtv.ui.seerr.SeerrSearchState
+import org.jellyfin.androidtv.ui.seerr.seerrAccountScope
+import org.jellyfin.androidtv.ui.seerr.seerrApiForAccount
 import androidx.leanback.app.RowsSupportFragment
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.Text
@@ -60,6 +73,35 @@ class SearchFragment : Fragment() {
 			val textInputFocusRequester = remember { FocusRequester() }
 			val resultFocusRequester = remember { FocusRequester() }
 			val speechRecognizerAvailability = rememberSpeechRecognizerAvailability()
+			val sessions = koinInject<SessionRepository>()
+			val session by sessions.currentSession.collectAsState()
+			val scope = seerrAccountScope(session)
+			val seerrModel = remember(scope) {
+				scope?.let {
+					val api = seerrApiForAccount(requireContext(), sessions, it)
+					ViewModelProvider(this, object : ViewModelProvider.Factory {
+						@Suppress("UNCHECKED_CAST")
+						override fun <T : ViewModel> create(modelClass: Class<T>): T = SeerrSearchViewModel(api) as T
+					})["search-seerr-$it", SeerrSearchViewModel::class.java]
+				}
+			}
+			val seerrState = seerrModel?.state?.collectAsState()?.value ?: SeerrSearchState()
+			val latestQuery by rememberUpdatedState(query.text)
+			LaunchedEffect(seerrModel, query.text) { seerrModel?.search(query.text) }
+			LaunchedEffect(seerrState.titles, query.text) {
+				searchFragmentDelegate.showSeerrResults(seerrState.titles, if (query.text.isBlank()) "Discover on Seerr" else "Seerr results")
+			}
+			SideEffect {
+				searchFragmentDelegate.onSeerrTitleClick = { title -> navigation.navigate(Destinations.seerr(type = title.mediaType, id = title.id)) }
+			}
+			DisposableEffect(seerrModel) {
+				val owner = viewLifecycleOwner
+				val observer = LifecycleEventObserver { _, event ->
+					if (event == Lifecycle.Event.ON_RESUME) seerrModel?.refresh(latestQuery)
+				}
+				owner.lifecycle.addObserver(observer)
+				onDispose { owner.lifecycle.removeObserver(observer) }
+			}
 
 			LaunchedEffect(Unit) {
 				val extraQuery = arguments?.getString(EXTRA_QUERY)
@@ -92,6 +134,7 @@ class SearchFragment : Fragment() {
 							onQueryChange = { query = query.copy(text = it) },
 							onQuerySubmit = {
 								viewModel.searchImmediately(query.text)
+								seerrModel?.search(query.text, immediate = true)
 								resultFocusRequester.requestFocus()
 							}
 						)
@@ -105,6 +148,7 @@ class SearchFragment : Fragment() {
 						},
 						onQuerySubmit = {
 							viewModel.searchImmediately(query.text)
+							seerrModel?.search(query.text, immediate = true)
 							// Note: We MUST change the focus to somewhere else when the keyboard is submitted because some vendors (like Amazon)
 							// will otherwise just keep showing a (fullscreen) keyboard, soft-locking the app.
 							resultFocusRequester.requestFocus()
@@ -113,8 +157,11 @@ class SearchFragment : Fragment() {
 							.weight(1f)
 							.focusRequester(textInputFocusRequester),
 					)
-					Button(onClick = { navigation.navigate(Destinations.seerr(query.text)) }) {
-						Text("Find in Seerr")
+				}
+				if (seerrState.message != null) Text(seerrState.message, Modifier.padding(horizontal = 48.dp, vertical = 6.dp))
+				if (!seerrState.connected && !seerrState.loading) {
+					Button(onClick = { navigation.navigate(Destinations.seerr(query.text)) }, modifier = Modifier.padding(horizontal = 48.dp)) {
+						Text("Connect Seerr")
 					}
 				}
 

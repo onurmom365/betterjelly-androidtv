@@ -49,6 +49,10 @@ internal class SeerrCookieJar(private val origin: HttpUrl, private val store: Se
 		catch (_: Exception) { throw IOException("Secure session storage unavailable") }
 	}
 	@Synchronized fun clear() { cookies = emptyList(); store.clear() }
+	@Synchronized fun reload(): Boolean {
+		cookies = store.read().mapNotNull { Cookie.parse(origin, it) }.filter { valid(it) }
+		return cookies.isNotEmpty()
+	}
 }
 
 class SeerrApi internal constructor(
@@ -110,6 +114,7 @@ class SeerrApi internal constructor(
 		return me()
 	}
 	fun disconnect() = jar.clear()
+	fun restoreSession() = jar.reload()
 	suspend fun titles(query: String, type: String, page: Int): SeerrPage {
 		val path = if (query.isBlank()) "/discover/${if (type == "movie") "movies" else "tv"}" else "/search"
 		val params = mutableMapOf("page" to page.toString()).apply { if (query.isNotBlank()) put("query", query.trim()) }
@@ -125,8 +130,15 @@ class SeerrApi internal constructor(
 	suspend fun service(type: String, id: Int): SeerrServiceDetails = decode(exchange(request("/service/${serviceType(type)}/$id")))
 	private fun serviceType(type: String): String { require(type in listOf("movie", "tv")); return if (type == "movie") "radarr" else "sonarr" }
 	suspend fun submit(body: SeerrRequestBody): SeerrRequest {
+		// Resolution belongs to the selected profile; this fork does not create a separate 4K request lane.
+		require(!body.is4k)
 		val response = exchange(request("/request", body = seerrJson.encodeToString(body)), submitting = true)
 		return try { decode<SeerrRequest>(response) } catch (_: Exception) { throw SeerrFailure(submissionUncertain = true) }
+	}
+	suspend fun history(userId: Int, filter: String, page: Int): SeerrRequestPage {
+		require(userId > 0 && filter in listOf("all", "pending", "processing", "available", "failed") && page > 0)
+		return decode(exchange(request("/request", mapOf("requestedBy" to userId.toString(), "filter" to filter,
+			"take" to "12", "skip" to ((page - 1) * 12).toString(), "sort" to "added"))))
 	}
 
 	@Serializable data class PlexPin(val id: Int, val code: String, val expiresIn: Int = 300, val authToken: String? = null)

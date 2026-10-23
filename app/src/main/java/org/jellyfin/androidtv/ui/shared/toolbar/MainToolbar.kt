@@ -157,6 +157,9 @@ private fun MainToolbar(
 						colors = if (activeButton == MainToolbarActiveButton.Search) activeButtonColors else ButtonDefaults.colors(),
 						content = { Text(stringResource(R.string.lbl_search)) }
 					)
+					Button(onClick = { navigationRepository.navigate(Destinations.seerr(history = true)) }) {
+						Text("Requests")
+					}
 				}
 			}
 		},

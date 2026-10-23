@@ -113,4 +113,34 @@ class SeerrApiTests : FunSpec({
 		api.checkPlex(SeerrApi.PlexPin(12, "ABCD"), "test-device") shouldBe true
 		paths shouldBe listOf("plex.tv/api/v2/pins/12", "192.168.1.199/api/v1/auth/plex")
 	}
+	test("4K requests are rejected before any network call") {
+		var calls = 0
+		val api = SeerrApi(MemorySeerrStore(), callFactory = factory { calls++; 201 to "{\"id\":1}" })
+		expectFailure<IllegalArgumentException> { api.submit(SeerrRequestBody("movie", 3, is4k = true)) }
+		calls shouldBe 0
+	}
+	test("normal submission serializes explicit false plus chosen profile and preset tags") {
+		val api = SeerrApi(MemorySeerrStore(), callFactory = factory { request ->
+			val body = seerrJson.decodeFromString<SeerrRequestBody>(Buffer().also { request.body?.writeTo(it) }.readUtf8())
+			body.is4k shouldBe false
+			body.profileId shouldBe 7
+			body.tags shouldBe listOf(5)
+			201 to "{\"id\":1,\"status\":2}"
+		})
+		api.submit(SeerrRequestBody("movie", 3, profileId = 7, tags = listOf(5))).statusLabel shouldBe "Requested"
+	}
+	test("history is scoped to the signed-in user with bounded pagination and a supported filter") {
+		val api = SeerrApi(MemorySeerrStore(), callFactory = factory { request ->
+			request.method shouldBe "GET"
+			request.url.encodedPath shouldBe "/api/v1/request"
+			request.url.queryParameter("requestedBy") shouldBe "4"
+			request.url.queryParameter("skip") shouldBe "12"
+			request.url.queryParameter("take") shouldBe "12"
+			request.url.queryParameter("filter") shouldBe "failed"
+			200 to """{"results":[{"id":1,"status":4,"is4k":true}],"pageInfo":{"pages":3}}"""
+		})
+		val result = api.history(4, "failed", 2)
+		result.pageInfo.pages shouldBe 3
+		result.results.single().statusLabel shouldBe "Failed"
+	}
 })
