@@ -210,7 +210,7 @@ class SeerrViewModel(private val api: SeerrApi, private val library: SeerrLibrar
 				val receipt = submitSeerrRequest(api, library, snapshot) { step -> _state.update { it.copy(submissionStep = step.label) } }
 				_state.update { it.copy(requestOpen = false, reviewing = false, needsRefresh = true,
 					title = snapshot.title?.copy(mediaInfo = receipt.media ?: snapshot.title.mediaInfo),
-					message = "Confirmed request #${receipt.id} in Seerr · ${receipt.statusLabel}. Open Requests to follow its status.") }
+					message = receipt.savedMessage) }
 			} catch (error: CancellationException) { throw error }
 			catch (error: SeerrSubmissionFailure) { _state.update { it.submissionFailed(error) } }
 			finally { _state.update { it.copy(submitting = false, submissionStep = null) } }

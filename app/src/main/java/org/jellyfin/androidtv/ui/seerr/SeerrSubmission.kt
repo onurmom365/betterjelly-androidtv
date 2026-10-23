@@ -51,7 +51,7 @@ internal suspend fun submitSeerrRequest(
 		stage(SeerrSubmissionStep.SEND)
 		val receipt = api.submit(body)
 		stage(SeerrSubmissionStep.CONFIRM)
-		if (!receipt.matches(body)) throw SeerrFailure(submissionUncertain = true, requestId = receipt.id.takeIf { it > 0 })
+		if (!receipt.matchesSavedRequest(body)) throw SeerrFailure(submissionUncertain = true, requestId = receipt.id.takeIf { it > 0 })
 		return api.confirmRequest(body, receipt.id)
 	} catch (error: CancellationException) { throw error }
 	catch (error: Exception) { throw SeerrSubmissionFailure(step, error) }

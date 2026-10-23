@@ -41,6 +41,13 @@ class SeerrModelsTests : FunSpec({
 	test("pending movie requests block duplicates even with stale media availability") {
 		movie.copy(mediaInfo = SeerrMediaInfo(requests = listOf(SeerrRequest(1, 1)))).movieRequestable(false) shouldBe false
 	}
+	test("failed saved requests prevent duplicate movies and seasons while other missing seasons remain requestable") {
+		movie.copy(mediaInfo = SeerrMediaInfo(requests = listOf(SeerrRequest(1, 4)))).normalMovieRequestable() shouldBe false
+		val title = tv.copy(mediaInfo = SeerrMediaInfo(requests = listOf(SeerrRequest(9, 4, seasons = listOf(SeerrSeasonRequest(1, 2))))))
+		title.normalRequestableSeasons().map { it.seasonNumber } shouldBe listOf(0, 2)
+		expectFailure<IllegalArgumentException> { prepareNormalSeerrRequest(user, title, setOf(1)) }
+		prepareNormalSeerrRequest(user, title, setOf(2)).seasons shouldBe listOf(2)
+	}
 	test("declined request or deleted media can be requested again subject to server validation") {
 		movie.copy(mediaInfo = SeerrMediaInfo(status = 7, requests = listOf(SeerrRequest(1, 3)))).movieRequestable(false) shouldBe true
 	}

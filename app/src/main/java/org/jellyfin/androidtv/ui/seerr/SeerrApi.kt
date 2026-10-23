@@ -155,7 +155,7 @@ class SeerrApi internal constructor(
 		require(id > 0)
 		try {
 			return decode<SeerrRequest>(exchange(request("/request/$id"))).also { receipt ->
-				require(receipt.matches(body) && receipt.id == id)
+				require(receipt.matchesSavedRequest(body) && receipt.id == id)
 			}
 		} catch (error: CancellationException) { throw error }
 		catch (_: Exception) { throw SeerrFailure(submissionUncertain = true, requestId = id) }

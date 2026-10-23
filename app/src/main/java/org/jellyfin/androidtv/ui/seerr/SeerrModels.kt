@@ -31,10 +31,14 @@ data class SeerrRequest(
 	val profileName: String? = null,
 	val createdAt: String = "",
 ) {
-	fun matches(body: SeerrRequestBody) = id > 0 && type == body.mediaType && is4k == body.is4k &&
-		status in listOf(1, 2, 5) && media?.tmdbId == body.mediaId && media.mediaType == body.mediaType &&
+	fun matchesSavedRequest(body: SeerrRequestBody) = id > 0 && type == body.mediaType && is4k == body.is4k &&
+		status in 1..5 && media?.tmdbId == body.mediaId && media.mediaType == body.mediaType &&
 		(body.mediaType != "tv" || body.seasons.orEmpty().isNotEmpty() &&
-			body.seasons.orEmpty().all { chosen -> seasons.any { it.seasonNumber == chosen && it.status in listOf(1, 2, 5) } })
+			body.seasons.orEmpty().all { chosen -> seasons.any { it.seasonNumber == chosen && it.status in 1..5 } })
+	val savedMessage get() = when (status) {
+		4 -> "Request #$id is saved in Seerr, but Seerr reports a failure while processing it for ${if (type == "tv") "Sonarr" else "Radarr"}. Check Seerr's error before retrying."
+		else -> "Confirmed request #$id in Seerr · $statusLabel. Open Requests to follow its status."
+	}
 	val statusLabel get() = when (status) {
 		1 -> "Pending approval"
 		2 -> "Requested"
@@ -89,15 +93,15 @@ data class SeerrTitle(
 	fun requestableSeasons(is4k: Boolean): List<SeerrSeason> = seasons.filter { season ->
 		val state = mediaInfo?.seasons?.find { it.seasonNumber == season.seasonNumber }
 		val availability = if (is4k) state?.status4k else state?.status
-		val pending = mediaInfo?.requests.orEmpty().any { request ->
-			request.is4k == is4k && request.status in listOf(1, 2) && request.seasons.any { it.seasonNumber == season.seasonNumber }
+		val existingRequest = mediaInfo?.requests.orEmpty().any { request ->
+			request.is4k == is4k && request.status in listOf(1, 2, 4) && request.seasons.any { it.seasonNumber == season.seasonNumber }
 		}
-		!blocked && season.seasonNumber >= 0 && season.episodeCount > 0 && availability !in listOf(2, 3, 5) && !pending
+		!blocked && season.seasonNumber >= 0 && season.episodeCount > 0 && availability !in listOf(2, 3, 5) && !existingRequest
 	}
 	fun movieRequestable(is4k: Boolean) = !blocked && status(is4k) !in listOf(2, 3, 5) &&
-		mediaInfo?.requests.orEmpty().none { it.is4k == is4k && it.status in listOf(1, 2) }
+		mediaInfo?.requests.orEmpty().none { it.is4k == is4k && it.status in listOf(1, 2, 4) }
 	fun normalMovieRequestable() = movieRequestable(false) && status(true) !in listOf(2, 3, 5) &&
-		mediaInfo?.requests.orEmpty().none { it.status in listOf(1, 2) }
+		mediaInfo?.requests.orEmpty().none { it.status in listOf(1, 2, 4) }
 	fun normalRequestableSeasons(): List<SeerrSeason> {
 		val otherLane = requestableSeasons(true).map { it.seasonNumber }.toSet()
 		return requestableSeasons(false).filter { it.seasonNumber in otherLane }
@@ -107,7 +111,9 @@ data class SeerrTitle(
 		status() == 5 || status(true) == 5 -> "Available"
 		status() == 4 || status(true) == 4 -> "Partly available"
 		mediaInfo?.requests.orEmpty().any { it.status == 1 } -> "Pending approval"
-		mediaInfo?.requests.orEmpty().any { it.status == 2 } || status() == 3 || status(true) == 3 -> "Requested"
+		mediaInfo?.requests.orEmpty().any { it.status == 2 } -> "Requested"
+		mediaInfo?.requests.orEmpty().any { it.status == 4 } -> "Failed"
+		status() == 3 || status(true) == 3 -> "Requested"
 		status() == 2 || status(true) == 2 -> "Pending approval"
 		else -> "Not requested"
 	}

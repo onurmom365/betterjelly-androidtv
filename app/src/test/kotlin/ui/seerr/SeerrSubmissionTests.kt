@@ -109,11 +109,11 @@ class SeerrSubmissionTests : FunSpec({
 		failure.userMessage.contains("private") shouldBe false
 		calls.count { it.startsWith("POST") } shouldBe 1
 	}
-	test("a wrong title lane status or missing season cannot confirm a saved request") {
+	test("a wrong title lane unknown status or missing season cannot confirm a saved request") {
 		for (bad in listOf(
 			receiptJson.replace("\"tmdbId\":10", "\"tmdbId\":11"),
 			receiptJson.replace("\"is4k\":false", "\"is4k\":true"),
-			receiptJson.replace("\"status\":2", "\"status\":4"),
+			receiptJson.replace("\"status\":2", "\"status\":0"),
 			receiptJson.replace("\"seasonNumber\":1", "\"seasonNumber\":2"),
 		)) {
 			val calls = mutableListOf<String>()
@@ -121,6 +121,30 @@ class SeerrSubmissionTests : FunSpec({
 			expectFailure<SeerrSubmissionFailure> { submitSeerrRequest(client, library, snapshot) }.step shouldBe SeerrSubmissionStep.CONFIRM
 			calls.count { it.startsWith("POST") } shouldBe 1
 		}
+	}
+	test("a request that fails during Seerr processing is still confirmed as saved without resubmitting") {
+		for (failedAtPost in listOf(false, true)) {
+			val calls = mutableListOf<String>()
+			val failed = receiptJson.replace("\"status\":2", "\"status\":4")
+			val client = api(calls) { request -> when {
+				request.url.encodedPath.endsWith("/42") -> 200 to failed
+				failedAtPost && request.method == "POST" -> 201 to failed
+				else -> null
+			} }
+			val receipt = submitSeerrRequest(client, library, snapshot)
+			receipt.id shouldBe 42
+			receipt.statusLabel shouldBe "Failed"
+			receipt.savedMessage.contains("saved in Seerr") shouldBe true
+			receipt.savedMessage.contains("Sonarr") shouldBe true
+			calls.count { it.startsWith("POST") } shouldBe 1
+		}
+	}
+	test("title status shows a failed handoff instead of stale processing while preserving available and active statuses") {
+		val failed = SeerrRequest(42, status = 4)
+		val title = SeerrTitle(10, "tv", mediaInfo = SeerrMediaInfo(status = 3, requests = listOf(failed)))
+		title.displayStatus() shouldBe "Failed"
+		title.copy(mediaInfo = title.mediaInfo!!.copy(status = 5)).displayStatus() shouldBe "Available"
+		title.copy(mediaInfo = title.mediaInfo!!.copy(requests = listOf(failed, SeerrRequest(43, status = 2)))).displayStatus() shouldBe "Requested"
 	}
 	test("a malformed POST receipt cannot appear successful") {
 		val calls = mutableListOf<String>()
