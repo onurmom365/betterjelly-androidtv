@@ -1,0 +1,116 @@
+package org.jellyfin.androidtv.ui.seerr
+
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
+import io.mockk.every
+import io.mockk.mockk
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Protocol
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.Buffer
+import java.io.IOException
+
+class SeerrApiTests : FunSpec({
+	fun factory(handler: (Request) -> Pair<Int, String>) = Call.Factory { request ->
+		mockk<Call> {
+			every { cancel() } returns Unit
+			every { enqueue(any()) } answers {
+				val callback = firstArg<Callback>()
+				try {
+					val (code, body) = handler(request)
+					callback.onResponse(this@mockk, Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(code).message("Test")
+						.body(body.toResponseBody("application/json".toMediaType())).build())
+				} catch (error: IOException) { callback.onFailure(this@mockk, error) }
+			}
+		}
+	}
+	test("local authentication sends credentials only to auth endpoint and never uses an API key") {
+		val paths = mutableListOf<String>()
+		val api = SeerrApi(MemorySeerrStore(), callFactory = factory { request ->
+			paths += request.url.encodedPath
+			request.url.host shouldBe "192.168.1.199"
+			request.url.port shouldBe 5055
+			request.header("X-Api-Key") shouldBe null
+			request.header("Authorization") shouldBe null
+			if (request.url.encodedPath.endsWith("/local")) {
+				request.method shouldBe "POST"
+				val payload = Buffer().also { request.body?.writeTo(it) }.readUtf8()
+				payload shouldBe """{"email":"test@example.invalid","password":"unit-test-only"}"""
+			}
+			200 to """{"id":4,"permissions":32}"""
+		})
+		api.login("test@example.invalid", "unit-test-only").id shouldBe 4
+		paths shouldBe listOf("/api/v1/auth/local", "/api/v1/auth/me")
+	}
+	test("search query is encoded and people are excluded") {
+		val api = SeerrApi(MemorySeerrStore(), callFactory = factory { request ->
+			request.url.queryParameter("query") shouldBe "A&B / test"
+			200 to """{"results":[{"id":1,"mediaType":"person"},{"id":2,"mediaType":"movie","title":"Movie"}]}"""
+		})
+		api.titles("A&B / test", "movie", 1).results.map { it.id } shouldBe listOf(2)
+	}
+	test("discovery responses inherit the known media type") {
+		val api = SeerrApi(MemorySeerrStore(), callFactory = factory { request ->
+			request.url.encodedPath shouldBe "/api/v1/discover/tv"
+			200 to """{"results":[{"id":4,"name":"Show"}]}"""
+		})
+		api.titles("", "tv", 1).results.single().mediaType shouldBe "tv"
+	}
+	test("invalid details route cannot issue a network call") {
+		var calls = 0
+		val api = SeerrApi(MemorySeerrStore(), callFactory = factory { calls++; 200 to "{}" })
+		expectFailure<IllegalArgumentException> { api.details("../settings", 1) }
+		calls shouldBe 0
+	}
+	test("changed Jellyfin user prevents any call with the previous Seerr session") {
+		var calls = 0
+		val api = SeerrApi(MemorySeerrStore(), accessAllowed = { false }, callFactory = factory { calls++; 200 to "{}" })
+		expectFailure<SeerrFailure> { api.me() }.status shouldBe 403
+		calls shouldBe 0
+	}
+	test("uncertain POST failure has no retry and requires status refresh") {
+		var calls = 0
+		val api = SeerrApi(MemorySeerrStore(), callFactory = factory { calls++; throw IOException("unit-test-failure") })
+		expectFailure<SeerrFailure> { api.submit(SeerrRequestBody("movie", 3)) }.submissionUncertain shouldBe true
+		calls shouldBe 1
+	}
+	test("duplicate and no-new-season responses cannot appear as successful submissions") {
+		for (code in listOf(409, 202)) {
+			val api = SeerrApi(MemorySeerrStore(), callFactory = factory { code to "{}" })
+			expectFailure<SeerrFailure> { api.submit(SeerrRequestBody("tv", 3, listOf(1))) }.status shouldBe code
+		}
+	}
+	test("redirect and permission errors do not leak response data into user messages") {
+		for (code in listOf(302, 403, 500)) {
+			val api = SeerrApi(MemorySeerrStore(), callFactory = factory { code to "sensitive-server-text" })
+			val error = expectFailure<SeerrFailure> { api.me() }
+			error.userMessage.contains("sensitive") shouldBe false
+		}
+	}
+	test("malformed success response after POST remains uncertain") {
+		val api = SeerrApi(MemorySeerrStore(), callFactory = factory { 201 to "invalid-json" })
+		expectFailure<SeerrFailure> { api.submit(SeerrRequestBody("movie", 3)) }.submissionUncertain shouldBe true
+	}
+	test("Plex token is exchanged only in the Seerr login body and never placed in a URL") {
+		val paths = mutableListOf<String>()
+		val api = SeerrApi(MemorySeerrStore(), callFactory = factory { request ->
+			request.url.toString().contains("unit-test-token") shouldBe false
+			paths += "${request.url.host}${request.url.encodedPath}"
+			if (request.url.host == "plex.tv") {
+				request.url.isHttps shouldBe true
+				request.header("X-Plex-Client-Identifier") shouldBe "test-device"
+				200 to """{"id":12,"code":"ABCD","authToken":"unit-test-token"}"""
+			} else {
+				request.url.encodedPath shouldBe "/api/v1/auth/plex"
+				Buffer().also { request.body?.writeTo(it) }.readUtf8() shouldBe """{"authToken":"unit-test-token"}"""
+				200 to "{}"
+			}
+		})
+		api.checkPlex(SeerrApi.PlexPin(12, "ABCD"), "test-device") shouldBe true
+		paths shouldBe listOf("plex.tv/api/v2/pins/12", "192.168.1.199/api/v1/auth/plex")
+	}
+})
