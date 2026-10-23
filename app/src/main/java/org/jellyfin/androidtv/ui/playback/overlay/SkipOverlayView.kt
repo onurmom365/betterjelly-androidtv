@@ -3,6 +3,9 @@ package org.jellyfin.androidtv.ui.playback.overlay
 import android.content.Context
 import android.util.AttributeSet
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -53,13 +56,14 @@ import kotlin.time.Duration.Companion.milliseconds
 fun SkipOverlayComposable(
 	visible: Boolean,
 	countdown: SegmentCountdown? = null,
+	playbackRunning: Boolean = false,
 ) {
 	Box(
 		contentAlignment = Alignment.BottomEnd,
 		modifier = Modifier
 			.padding(48.dp, 48.dp)
 	) {
-		if (countdown != null) SegmentCountdownCard(countdown)
+		if (countdown != null) SegmentCountdownCard(countdown, playbackRunning)
 		AnimatedVisibility(visible, enter = fadeIn(), exit = fadeOut()) {
 			Row(
 				modifier = Modifier
@@ -85,7 +89,16 @@ fun SkipOverlayComposable(
 }
 
 @Composable
-private fun SegmentCountdownCard(countdown: SegmentCountdown) {
+private fun SegmentCountdownCard(countdown: SegmentCountdown, playbackRunning: Boolean) {
+	val ring = remember(countdown.cue) { Animatable(countdown.remainingFraction) }
+	LaunchedEffect(ring, countdown.remainingFraction, playbackRunning) {
+		if (playbackRunning) {
+			// Match the native 500ms progress-report cadence without advancing beyond a reported position.
+			ring.animateTo(countdown.remainingFraction, tween(durationMillis = 500, easing = LinearEasing))
+		} else {
+			ring.snapTo(countdown.remainingFraction)
+		}
+	}
 	val segmentName = stringResource(when (countdown.cue.type) {
 		MediaSegmentType.INTRO -> R.string.segment_countdown_intro
 		MediaSegmentType.OUTRO -> R.string.segment_countdown_outro
@@ -113,7 +126,7 @@ private fun SegmentCountdownCard(countdown: SegmentCountdown) {
 				drawArc(
 					color = color,
 					startAngle = -90f,
-					sweepAngle = 360f * countdown.remainingFraction,
+					sweepAngle = 360f * ring.value,
 					useCenter = false,
 					topLeft = Offset(width / 2, width / 2),
 					size = Size(size.width - width, size.height - width),
@@ -135,6 +148,13 @@ class SkipOverlayView @JvmOverloads constructor(
 	private val _targetPosition = MutableStateFlow<Duration?>(null)
 	private val _skipUiEnabled = MutableStateFlow(true)
 	private val _segmentCountdowns = MutableStateFlow<List<SegmentCountdownCue>>(emptyList())
+	private val _playbackRunning = MutableStateFlow(false)
+
+	var playbackRunning: Boolean
+		get() = _playbackRunning.value
+		set(value) {
+			_playbackRunning.value = value
+		}
 
 	var segmentCountdowns: List<SegmentCountdownCue>
 		get() = _segmentCountdowns.value
@@ -187,6 +207,7 @@ class SkipOverlayView @JvmOverloads constructor(
 		val currentPosition by _currentPosition.collectAsState()
 		val targetPosition by _targetPosition.collectAsState()
 		val segmentCountdowns by _segmentCountdowns.collectAsState()
+		val playbackRunning by _playbackRunning.collectAsState()
 
 		val visible by remember(skipUiEnabled, currentPosition, targetPosition) {
 			derivedStateOf { visible }
@@ -199,6 +220,6 @@ class SkipOverlayView @JvmOverloads constructor(
 		}
 
 		val countdown = if (skipUiEnabled && !visible) findSegmentCountdown(segmentCountdowns, currentPosition.inWholeMilliseconds) else null
-		SkipOverlayComposable(visible, countdown)
+		SkipOverlayComposable(visible, countdown, playbackRunning)
 	}
 }

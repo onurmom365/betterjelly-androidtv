@@ -1241,6 +1241,8 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
 
     public void setCurrentTime(long time) {
         binding.skipOverlay.setCurrentPositionMs(time);
+        PlaybackController controller = playbackControllerContainer.getValue().getPlaybackController();
+        binding.skipOverlay.setPlaybackRunning(controller != null && controller.isPlaying());
         if (leanbackOverlayFragment != null)
             leanbackOverlayFragment.updateCurrentPosition();
     }
@@ -1262,6 +1264,8 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
     }
 
     public void setPlayPauseActionState(final int state) {
+        PlaybackController controller = playbackControllerContainer.getValue().getPlaybackController();
+        if (binding != null) binding.skipOverlay.setPlaybackRunning(controller != null && controller.isPlaying());
         leanbackOverlayFragment.updatePlayState();
     }
 
