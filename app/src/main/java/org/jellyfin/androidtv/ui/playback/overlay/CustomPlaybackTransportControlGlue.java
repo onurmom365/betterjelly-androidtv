@@ -79,12 +79,24 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
     private TextView mEndsText = null;
 
     private final Handler mHandler = new Handler();
+    private final DpadSeekCommitter dpadSeekCommitter = new DpadSeekCommitter(new DpadSeekCommitter.Scheduler() {
+        @Override
+        public void postDelayed(Runnable task, long delayMs) {
+            mHandler.postDelayed(task, delayMs);
+        }
+
+        @Override
+        public void removeCallbacks(Runnable task) {
+            mHandler.removeCallbacks(task);
+        }
+    });
     private Runnable mRefreshEndTime;
     private Runnable mRefreshViewVisibility;
 
     private LinearLayout mButtonRef;
     private View progressBar;
     private boolean dpadSeekActive;
+    private int dpadSeekDirection;
 
     CustomPlaybackTransportControlGlue(Context context, VideoPlayerAdapter playerAdapter, PlaybackController playbackController) {
         super(context, playerAdapter);
@@ -109,6 +121,7 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
 
     @Override
     protected void onDetachedFromHost() {
+        cancelDpadSeekCommit();
         mHandler.removeCallbacks(mRefreshEndTime);
         mHandler.removeCallbacks(mRefreshViewVisibility);
 
@@ -182,6 +195,7 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
 
             @Override
             protected void onUnbindRowViewHolder(RowPresenter.ViewHolder vh) {
+                cancelDpadSeekCommit();
                 super.onUnbindRowViewHolder(vh);
                 progressBar = null;
                 dpadSeekActive = false;
@@ -383,6 +397,9 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
 
     public void previewDpadSeek(KeyEvent event) {
         if (progressBar == null || !progressBar.requestFocus()) return;
+        // Re-anchor a direction change so the backward/forward lengths remain independent.
+        if (dpadSeekActive && dpadSeekDirection != event.getKeyCode()) dpadSeekCommitter.flush();
+        dpadSeekCommitter.cancel();
         if (!dpadSeekActive) {
             if (getSeekProvider() instanceof CustomSeekProvider) {
                 UserSettingPreferences prefs = KoinJavaComponent.<UserSettingPreferences>get(UserSettingPreferences.class);
@@ -390,6 +407,7 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
                         getControlsRow().getCurrentPosition(), prefs.get(UserSettingPreferences.Companion.getSkipBackLength()));
             }
             dpadSeekActive = true;
+            dpadSeekDirection = event.getKeyCode();
         }
         progressBar.dispatchKeyEvent(event);
         setInjectedViewsVisibility();
@@ -397,12 +415,25 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
 
     public void finishDpadSeek(KeyEvent event) {
         if (!dpadSeekActive || progressBar == null) return;
-        dpadSeekActive = false;
         // Finish through Leanback's public input path to close thumbnail mode and restore playback.
         int finishKey = event.isCanceled() ? KeyEvent.KEYCODE_BACK : KeyEvent.KEYCODE_DPAD_CENTER;
-        progressBar.dispatchKeyEvent(new KeyEvent(event.getDownTime(), event.getEventTime(),
-                KeyEvent.ACTION_UP, finishKey, 0));
-        setInjectedViewsVisibility();
+        KeyEvent finishEvent = new KeyEvent(event.getDownTime(), event.getEventTime(), KeyEvent.ACTION_UP, finishKey, 0);
+        Runnable finish = () -> {
+            if (!dpadSeekActive || progressBar == null) return;
+            dpadSeekActive = false;
+            progressBar.dispatchKeyEvent(finishEvent);
+            setInjectedViewsVisibility();
+        };
+        if (event.isCanceled()) {
+            dpadSeekCommitter.cancel();
+            finish.run();
+        } else {
+            dpadSeekCommitter.finishAfterPause(finish);
+        }
+    }
+
+    public void cancelDpadSeekCommit() {
+        dpadSeekCommitter.cancel();
     }
 
     @Override

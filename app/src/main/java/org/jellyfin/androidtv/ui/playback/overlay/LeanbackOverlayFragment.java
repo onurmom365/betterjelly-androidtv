@@ -115,6 +115,7 @@ public class LeanbackOverlayFragment extends PlaybackSupportFragment {
 
     @Override
     public void onPause() {
+        if (playerGlue != null) playerGlue.cancelDpadSeekCommit();
         super.onPause();
         if (playerAdapter != null) {
             playerAdapter.getMasterOverlayFragment().onPause();
