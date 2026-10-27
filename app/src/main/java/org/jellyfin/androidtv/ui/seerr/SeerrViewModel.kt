@@ -3,6 +3,7 @@ package org.jellyfin.androidtv.ui.seerr
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -34,6 +35,7 @@ data class SeerrUiState(
 	val optionsLoaded: Boolean = false, val requestOpen: Boolean = false, val reviewing: Boolean = false, val needsRefresh: Boolean = false,
 	val historyMode: Boolean = false, val historyFilter: String = "all", val historyPage: Int = 1, val historyPages: Int = 1,
 	val history: List<SeerrHistoryEntry> = emptyList(), val historyWarning: String? = null,
+	val requestPrompt: SeerrRequestPrompt? = null, val blockedManagementIds: Set<Int> = emptySet(),
 ) {
 	val effectiveTags get() = tags ?: service?.server?.activeTags.orEmpty().toSet()
 	fun requestBody(): SeerrRequestBody? = runCatching {
@@ -44,10 +46,14 @@ data class SeerrUiState(
 	}.getOrNull()
 }
 
-class SeerrViewModel(private val api: SeerrApi, private val library: SeerrLibrary) : ViewModel() {
+class SeerrViewModel internal constructor(private val api: SeerrApi, private val library: SeerrLibrary,
+	private val scopeOverride: CoroutineScope? = null) : ViewModel() {
+	private val workScope get() = scopeOverride ?: viewModelScope
 	private val _state = MutableStateFlow(SeerrUiState(restoringSession = true))
 	val state = _state.asStateFlow()
 	private var action: Job? = null
+	private var historyMetadata: Job? = null
+	private var historyGeneration = 0
 	private var started = false
 	private var initialType: String? = null
 	private var initialId: Int? = null
@@ -56,7 +62,7 @@ class SeerrViewModel(private val api: SeerrApi, private val library: SeerrLibrar
 	private fun perform(block: suspend () -> Unit) {
 		if (_state.value.busy) return
 		_state.update { it.copy(busy = true, message = null) }
-		action = viewModelScope.launch {
+		action = workScope.launch {
 			try { block() }
 			catch (error: CancellationException) { throw error }
 			catch (error: Exception) { _state.update { it.copy(message = (error as? SeerrFailure)?.userMessage ?: "This action could not be completed. Please refresh and retry.") } }
@@ -67,11 +73,12 @@ class SeerrViewModel(private val api: SeerrApi, private val library: SeerrLibrar
 		if (started && !force) return
 		started = true
 		if (type != null && id != null) { initialType = type; initialId = id }
-		_state.update { it.copy(query = query, historyMode = history || it.historyMode, restoringSession = true) }
+		val seed = initialType?.let { kind -> initialId?.let { api.cachedTitle(kind, it) } }
+		_state.update { it.copy(query = query, historyMode = history || it.historyMode, restoringSession = true, title = seed ?: it.title) }
 		perform {
 			try {
 				val checked = checkSavedSeerrSession(api)
-				_state.update { it.checkedSession(checked) }
+				_state.update { it.checkedSession(checked).copy(restoringSession = false) }
 				if (checked is SeerrSessionCheck.Connected) afterLogin()
 			}
 			finally { _state.update { it.copy(restoringSession = false) } }
@@ -108,22 +115,30 @@ class SeerrViewModel(private val api: SeerrApi, private val library: SeerrLibrar
 		if (_state.value.submitting) return
 		if (_state.value.restoringSession) started = false
 		action?.cancel()
+		cancelMetadata()
 		_state.update { it.copy(busy = false, pinCode = null, restoringSession = false) }
 	}
 	fun disconnect() {
 		if (_state.value.busy) return
+		cancelMetadata()
 		api.disconnect()
 		_state.value = SeerrUiState(historyMode = true)
 	}
-	fun browse(query: String, type: String, page: Int = 1) = perform { browseNow(query, type, page) }
+	private fun cancelMetadata() { historyGeneration++; historyMetadata?.cancel(); historyMetadata = null }
+	fun browse(query: String, type: String, page: Int = 1) = perform { initialType = null; initialId = null; browseNow(query, type, page) }
 	private suspend fun browseNow(query: String, type: String, page: Int) {
+		cancelMetadata()
 		val result = api.titles(query, type, page)
 		_state.update { it.copy(query = query, type = type, page = page, totalPages = result.totalPages, results = result.results,
 			title = null, historyMode = false, requestOpen = false, reviewing = false) }
 	}
 	fun openTitle(title: SeerrTitle) = perform { openTitleNow(title) }
 	private suspend fun openTitleNow(title: SeerrTitle) {
+		cancelMetadata()
+		_state.update { it.copy(title = api.cachedTitle(title.mediaType, title.id) ?: title, libraryChecked = false,
+			requestOpen = false, reviewing = false, requestPrompt = null, message = null) }
 		val details = api.details(title.mediaType, title.id)
+		_state.update { it.copy(title = details) }
 		val matches = library.find(details)
 		_state.update { it.copy(title = details, libraryMatches = matches.getOrNull().orEmpty(), libraryChecked = matches.isSuccess,
 			exactLibraryMatch = matches.getOrNull().orEmpty().isNotEmpty(), is4k = false, seasons = emptySet(), services = emptyList(),
@@ -184,24 +199,92 @@ class SeerrViewModel(private val api: SeerrApi, private val library: SeerrLibrar
 	}
 	fun defaultTags() { if (!_state.value.busy) _state.update { it.copy(tags = null) } }
 	fun review() { if (!_state.value.busy && _state.value.requestBody() != null) _state.update { it.copy(reviewing = true) } }
-	fun history(filter: String = "all", page: Int = 1) = perform { historyNow(filter, page) }
+	fun history(filter: String = "all", page: Int = 1) = perform {
+		initialType = null; initialId = null
+		_state.update { it.copy(historyMode = true, title = null, requestOpen = false, requestPrompt = null) }
+		historyNow(filter, page)
+	}
 	private suspend fun historyNow(filter: String, page: Int) {
+		cancelMetadata()
 		val result = api.history(requireNotNull(_state.value.user).id, filter, page)
-		val limiter = Semaphore(3)
-		val entries = coroutineScope { result.results.map { request -> async {
+		val entries = result.results.map { request ->
 			val media = request.media
 			val type = media?.mediaType?.ifBlank { request.type } ?: request.type
-			val title = if (media != null && media.tmdbId > 0 && type in listOf("movie", "tv")) limiter.withPermit {
-				try { api.details(type, media.tmdbId) }
-				catch (error: CancellationException) { throw error }
-				catch (_: Exception) { null }
-			} else null
-			SeerrHistoryEntry(request, title)
-		} }.awaitAll() }
+			SeerrHistoryEntry(request, media?.let { api.cachedTitle(type, it.tmdbId)?.copy(mediaInfo = media) })
+		}
 		_state.update { it.copy(historyMode = true, title = null, requestOpen = false, reviewing = false, history = entries,
 			historyFilter = filter, historyPage = page, historyPages = result.pageInfo.pages,
 			historyWarning = if (result.serviceErrors.radarr.isNotEmpty() || result.serviceErrors.sonarr.isNotEmpty())
 				"Seerr reports a connection problem with a download manager. A saved request may not have reached it." else null) }
+		val generation = historyGeneration
+		val missing = entries.filter { it.title == null }.mapNotNull { entry -> entry.request.media?.let { media ->
+			(media.mediaType.ifBlank { entry.request.type } to media.tmdbId).takeIf { it.first in listOf("movie", "tv") && it.second > 0 }
+		} }.distinct()
+		historyMetadata = workScope.launch {
+			val limiter = Semaphore(3)
+			coroutineScope { missing.map { (kind, id) -> async { limiter.withPermit {
+				val metadata = try { api.metadata(kind, id) } catch (error: CancellationException) { throw error } catch (_: Exception) { null }
+				if (metadata != null) _state.update { current ->
+					if (generation != historyGeneration || !current.historyMode || current.title != null) current
+					else current.copy(history = current.history.map { entry ->
+						val media = entry.request.media
+						if (media?.tmdbId == id && media.mediaType.ifBlank { entry.request.type } == kind)
+							entry.copy(title = metadata.copy(mediaInfo = media)) else entry
+					})
+				}
+			} } }.awaitAll() }
+		}
+	}
+	fun askRequestAction(kind: SeerrRequestAction, request: SeerrRequest, label: String) {
+		val s = _state.value
+		val user = s.user ?: return
+		if (s.busy || request.id in s.blockedManagementIds) return
+		if (if (kind == SeerrRequestAction.RETRY) user.canRetry(request) else user.canDelete(request))
+			_state.update { it.copy(requestPrompt = SeerrRequestPrompt(kind, request, label), message = null) }
+	}
+	fun dismissRequestAction() { if (!_state.value.submitting) _state.update { it.copy(requestPrompt = null) } }
+	fun confirmRequestAction() {
+		val prompt = _state.value.requestPrompt ?: return
+		perform {
+			cancelMetadata()
+			_state.update { it.copy(submitting = true) }
+			try {
+				val result = manageSeerrRequest(api, prompt)
+				applyManagedResult(prompt.request.id, result)
+				_state.update { it.copy(requestPrompt = null, submitting = false, message = when (result) {
+					is SeerrManagedResult.Retried -> "Request #${result.request.id} · ${result.request.statusLabel}. The existing request was checked in Seerr."
+					SeerrManagedResult.Deleted -> "Deleted request #${prompt.request.id} from Seerr. Media files were kept."
+				}) }
+				refreshAfterManagement()
+			} catch (error: CancellationException) { throw error }
+			catch (error: SeerrManagementFailure) { _state.update { it.copy(requestPrompt = null, message = error.userMessage,
+				blockedManagementIds = if (error.uncertain) it.blockedManagementIds + prompt.request.id else it.blockedManagementIds) } }
+			finally { _state.update { it.copy(submitting = false) } }
+		}
+	}
+	private fun applyManagedResult(id: Int, result: SeerrManagedResult) {
+		_state.update { current ->
+			fun List<SeerrRequest>.updated() = if (result is SeerrManagedResult.Retried) map { if (it.id == id) result.request else it } else filterNot { it.id == id }
+			current.copy(blockedManagementIds = current.blockedManagementIds - id, needsRefresh = current.title != null,
+				title = current.title?.let { title -> title.copy(mediaInfo = title.mediaInfo?.let { it.copy(requests = it.requests.updated()) }) },
+				history = if (result is SeerrManagedResult.Deleted) current.history.filterNot { it.request.id == id }
+				else current.history.map { if (it.request.id == id) it.copy(request = (result as SeerrManagedResult.Retried).request) else it })
+		}
+	}
+	private suspend fun refreshAfterManagement() {
+		val savedMessage = _state.value.message
+		try {
+			val s = _state.value
+			if (s.title != null) openTitleNow(s.title) else if (s.historyMode) historyNow(s.historyFilter, s.historyPage)
+			_state.update { it.copy(message = savedMessage) }
+		} catch (error: CancellationException) { throw error }
+		catch (_: Exception) { _state.update { it.copy(message = "$savedMessage Refresh status to update this view.") } }
+	}
+	fun refreshManagedRequest(id: Int) = perform {
+		try { applyManagedResult(id, SeerrManagedResult.Retried(api.requestRecord(id))) }
+		catch (error: SeerrFailure) { if (error.status == 404) applyManagedResult(id, SeerrManagedResult.Deleted) else throw error }
+		_state.update { it.copy(message = "Request #$id status checked in Seerr.") }
+		refreshAfterManagement()
 	}
 	fun submit() {
 		val snapshot = _state.value

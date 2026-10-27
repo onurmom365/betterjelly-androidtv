@@ -54,7 +54,8 @@ class SeerrFragment : Fragment() {
 			DisposableEffect(model) { onDispose { model.leave() } }
 			val back = {
 				if (!state.submitting) {
-					if (state.pinCode != null) model.cancelPlex()
+					if (state.requestPrompt != null) model.dismissRequestAction()
+					else if (state.pinCode != null) model.cancelPlex()
 					else if (state.requestOpen || state.reviewing || (state.title != null && state.historyMode)) model.back()
 					else { model.leave(); if (!navigation.goBack()) navigation.navigate(Destinations.search(), replace = true) }
 				}

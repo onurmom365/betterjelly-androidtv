@@ -106,6 +106,7 @@ fun SeerrScreen(s: SeerrUiState, model: SeerrViewModel, onBack: () -> Unit, onSe
 		}
 	}
 	if (s.requestOpen && s.title != null) RequestDialog(s, model)
+	s.requestPrompt?.let { RequestActionDialog(s, it, model) }
 }
 
 @Composable
@@ -158,13 +159,15 @@ private fun TitleDetails(s: SeerrUiState, model: SeerrViewModel, onLibraryItem: 
 		if (title.mediaType == "movie") !s.exactLibraryMatch && title.normalMovieRequestable() else title.normalRequestableSeasons().isNotEmpty()
 	val requestFocus = remember { FocusRequester() }
 	val refreshFocus = remember { FocusRequester() }
+	val retryFocus = remember { FocusRequester() }
+	val retry = title.mediaInfo?.requests.orEmpty().firstOrNull { s.user?.canRetry(it) == true && it.id !in s.blockedManagementIds }
 	val list = rememberLazyListState()
 	var initiallyFocused by remember(title.id) { mutableStateOf(false) }
 	LaunchedEffect(title.id, s.busy, s.requestOpen) {
 		if (!s.busy && !s.requestOpen && !initiallyFocused) {
 			list.scrollToItem(0)
 			withFrameNanos { }
-			if (requestable) requestFocus.requestFocus() else refreshFocus.requestFocus()
+			if (requestable) requestFocus.requestFocus() else if (retry != null) retryFocus.requestFocus() else refreshFocus.requestFocus()
 			initiallyFocused = true
 		}
 	}
@@ -190,6 +193,10 @@ private fun TitleDetails(s: SeerrUiState, model: SeerrViewModel, onLibraryItem: 
 								primary = true, modifier = Modifier.focusRequester(requestFocus)) { model.beginRequest() }
 							Action("Refresh status", !s.busy, modifier = Modifier.focusRequester(refreshFocus)) { model.openTitle(title) }
 						}
+						retry?.let { request -> Action("Retry failed request #${request.id}", !s.busy,
+							modifier = Modifier.focusRequester(retryFocus)) {
+							model.askRequestAction(SeerrRequestAction.RETRY, request.copy(type = title.mediaType, media = title.mediaInfo), title.displayTitle)
+						} }
 					}
 				}
 			}
@@ -206,7 +213,11 @@ private fun TitleDetails(s: SeerrUiState, model: SeerrViewModel, onLibraryItem: 
 			Message("An existing request uses Seerr's separate 4K route. Without a matching destination, Seerr can save it without sending it to Radarr/Sonarr. New requests use the normal route and your chosen quality profile.")
 		}
 		items(title.mediaInfo?.requests.orEmpty(), key = { "r-${it.id}" }) { request ->
-			Text("Request #${request.id} · ${request.statusLabel}${if (request.is4k) " · Existing 4K route" else ""}", color = Muted, modifier = Modifier.padding(horizontal = 40.dp))
+			Column(Modifier.padding(horizontal = 40.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+				Text("Request #${request.id} · ${request.statusLabel}${if (request.is4k) " · Existing 4K route" else ""}", color = Muted)
+				if (request.seasons.isNotEmpty()) Text("Seasons ${request.seasons.joinToString { it.seasonNumber.toString() }}", color = Muted, fontSize = 14.sp)
+				RequestActions(s, request.copy(type = title.mediaType, media = title.mediaInfo), title.displayTitle, model)
+			}
 		}
 		item { Spacer(Modifier.height(28.dp)) }
 	}
@@ -265,7 +276,11 @@ private fun RequestHistory(s: SeerrUiState, model: SeerrViewModel) {
 		LazyVerticalGrid(GridCells.Fixed(3), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
 			items(s.history, key = { it.request.id }) { entry ->
 				val title = entry.title
-				Button(onClick = { if (title != null) model.openTitle(title) }, enabled = !s.busy && title != null,
+				val media = entry.request.media
+				val kind = media?.mediaType?.ifBlank { entry.request.type } ?: entry.request.type
+				val navigable = title ?: media?.takeIf { it.tmdbId > 0 && kind in listOf("movie", "tv") }?.let { SeerrTitle(it.tmdbId, kind) }
+				Column(Modifier.clip(Shape).background(Panel), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+				Button(onClick = { if (navigable != null) model.openTitle(navigable) }, enabled = !s.busy && navigable != null,
 					modifier = Modifier.fillMaxWidth(), shape = Shape, contentPadding = PaddingValues(14.dp),
 					colors = ButtonDefaults.colors(containerColor = Panel, focusedContainerColor = Color(0xFF2E3B59), focusedContentColor = Color.White)) {
 					Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -279,6 +294,50 @@ private fun RequestHistory(s: SeerrUiState, model: SeerrViewModel) {
 						}
 					}
 				}
+				Box(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp)) {
+					RequestActions(s, entry.request, title?.displayTitle ?: "Request #${entry.request.id}", model)
+				}
+				}
+			}
+		}
+	}
+}
+
+@Composable
+private fun RequestActions(s: SeerrUiState, request: SeerrRequest, title: String, model: SeerrViewModel) {
+	val user = s.user ?: return
+	Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+	Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+		if (request.id in s.blockedManagementIds) Action("Check status", !s.busy) { model.refreshManagedRequest(request.id) }
+		else {
+			if (user.canRetry(request)) Action("Retry", !s.busy, primary = request.status == 4) {
+				model.askRequestAction(SeerrRequestAction.RETRY, request, title)
+			}
+			if (user.canDelete(request)) Action("Delete", !s.busy) { model.askRequestAction(SeerrRequestAction.DELETE, request, title) }
+		}
+	}
+	if (request.status == 4 && !user.permits(16)) Text("Seerr requires request-management permission to retry or delete failed requests.", color = Muted, fontSize = 12.sp)
+	}
+}
+
+@Composable
+private fun RequestActionDialog(s: SeerrUiState, prompt: SeerrRequestPrompt, model: SeerrViewModel) {
+	val cancel = remember { FocusRequester() }
+	LaunchedEffect(prompt.request.id, prompt.action) { withFrameNanos { }; cancel.requestFocus() }
+	Dialog(onDismissRequest = { model.dismissRequestAction() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+		Column(Modifier.widthIn(max = 650.dp).fillMaxWidth(0.85f).clip(Shape).background(Panel).border(1.dp, Line, Shape).padding(26.dp),
+			verticalArrangement = Arrangement.spacedBy(15.dp)) {
+			Text(if (prompt.action == SeerrRequestAction.RETRY) "Retry failed request?" else "Delete request?", color = Color.White, fontSize = 26.sp)
+			Text(prompt.title, color = Color.White, fontSize = 20.sp, maxLines = 2)
+			Text("Request #${prompt.request.id} · ${prompt.request.statusLabel}", color = Accent, fontSize = 16.sp)
+			if (prompt.request.seasons.isNotEmpty()) Text("Seasons ${prompt.request.seasons.joinToString { it.seasonNumber.toString() }}", color = Muted)
+			Text(if (prompt.action == SeerrRequestAction.RETRY)
+				"Retry this existing request in Seerr using its saved seasons, quality profile and tags."
+			else "Delete this whole request record, including all seasons listed above, from Seerr. Media files and Sonarr/Radarr library entries are kept.", color = Muted, fontSize = 16.sp)
+			if (s.submitting) Text("${if (prompt.action == SeerrRequestAction.RETRY) "Retrying" else "Deleting"} and checking its status…", color = Accent)
+			Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)) {
+				Action("Cancel", !s.submitting, modifier = Modifier.focusRequester(cancel)) { model.dismissRequestAction() }
+				Action(if (prompt.action == SeerrRequestAction.RETRY) "Retry request" else "Delete request", !s.busy && !s.submitting, primary = true) { model.confirmRequestAction() }
 			}
 		}
 	}

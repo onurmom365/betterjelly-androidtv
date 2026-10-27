@@ -27,28 +27,37 @@ class SeerrSearchViewModel(private val api: SeerrApi) : ViewModel() {
 	val state = _state.asStateFlow()
 	private var checked = false
 	private var job: Job? = null
+	private var activeQuery: String? = null
+	private var querying = false
 
 	fun refresh(query: String) { checked = false; search(query, immediate = true) }
 	fun search(query: String, immediate: Boolean = false) {
+		val normalized = query.trim()
+		if (activeQuery == normalized && job?.isActive == true && (!immediate || querying)) return
 		job?.cancel()
-		_state.update { it.copy(titles = emptyList(), loading = true, message = null) }
+		activeQuery = normalized
+		querying = false
+		_state.update { it.copy(loading = true, message = null) }
 		job = viewModelScope.launch {
 			try {
-				if (!immediate) delay(600)
+				if (!immediate) delay(350)
+				querying = true
 				if (!checked) {
 					val hasSession = withContext(Dispatchers.IO) { api.restoreSession() }
 					_state.update { it.copy(connected = hasSession) }
-					if (hasSession) api.me()
+					if (hasSession) api.meForNavigation()
 					checked = true
 				}
-				if (!_state.value.connected) return@launch
+				if (!_state.value.connected) { _state.update { it.copy(titles = emptyList()) }; return@launch }
 				val results = loadSeerrSearch(api, query)
 				_state.update { it.copy(titles = results.titles, message = results.message) }
 			} catch (error: CancellationException) { throw error }
 			catch (error: Exception) {
 				_state.update { it.copy(connected = it.connected && (error as? SeerrFailure)?.status !in listOf(401, 403),
 					message = ((error as? SeerrFailure)?.userMessage ?: "Seerr results could not load. Please retry the search.") ) }
-			} finally { if (kotlin.coroutines.coroutineContext[Job]?.isActive == true) _state.update { it.copy(loading = false) } }
+			} finally { if (kotlin.coroutines.coroutineContext[Job]?.isActive == true) {
+				querying = false; _state.update { it.copy(loading = false) }
+			} }
 		}
 	}
 }

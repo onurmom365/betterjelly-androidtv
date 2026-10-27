@@ -12,7 +12,7 @@ internal sealed interface SeerrSessionCheck {
 
 internal suspend fun checkSavedSeerrSession(api: SeerrApi): SeerrSessionCheck = try {
 	if (!withContext(Dispatchers.IO) { api.restoreSession() }) SeerrSessionCheck.SignInRequired
-	else SeerrSessionCheck.Connected(api.me())
+	else SeerrSessionCheck.Connected(api.meForNavigation())
 } catch (error: CancellationException) { throw error }
 catch (error: SeerrFailure) {
 	if (error.status in listOf(401, 403)) SeerrSessionCheck.SignInRequired

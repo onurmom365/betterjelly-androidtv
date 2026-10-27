@@ -6,7 +6,6 @@ import androidx.leanback.widget.ListRow
 import androidx.leanback.widget.OnItemViewClickedListener
 import androidx.leanback.widget.OnItemViewSelectedListener
 import androidx.leanback.widget.Row
-import androidx.leanback.widget.ArrayObjectAdapter
 import org.jellyfin.androidtv.constant.QueryType
 import org.jellyfin.androidtv.data.service.BackgroundService
 import org.jellyfin.androidtv.ui.itemhandling.BaseRowItem
@@ -25,15 +24,18 @@ class SearchFragmentDelegate(
 ) {
 	val rowsAdapter = MutableObjectAdapter<Row>(CustomListRowPresenter())
 	private var seerrRow: ListRow? = null
+	private val seerrItems = MutableObjectAdapter<SeerrTitle>(SeerrPosterPresenter())
+	private var seerrHeading: String? = null
 	var onSeerrTitleClick: (SeerrTitle) -> Unit = {}
 
 	fun showSeerrResults(titles: List<SeerrTitle>, heading: String) {
-		val existing = seerrRow
-		if (existing != null) rowsAdapter.remove(existing)
-		seerrRow = titles.takeIf { it.isNotEmpty() }?.let {
-			ListRow(HeaderItem(heading), ArrayObjectAdapter(SeerrPosterPresenter()).apply { addAll(0, it) })
-		}
-		seerrRow?.let { rowsAdapter.add(0, it) }
+		seerrItems.replaceAll(titles, areItemsTheSame = { old, new -> old.id == new.id && old.mediaType == new.mediaType })
+		if (titles.isEmpty()) { seerrRow?.let { rowsAdapter.remove(it) }; seerrRow = null; return }
+		if (seerrRow != null && seerrHeading == heading) return
+		seerrRow?.let { rowsAdapter.remove(it) }
+		seerrRow = ListRow(HeaderItem(heading), seerrItems)
+		seerrHeading = heading
+		rowsAdapter.add(0, requireNotNull(seerrRow))
 	}
 
 	fun showResults(searchResultGroups: Collection<SearchResultGroup>) {
