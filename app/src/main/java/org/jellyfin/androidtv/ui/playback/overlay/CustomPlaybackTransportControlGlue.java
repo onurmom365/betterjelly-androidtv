@@ -443,10 +443,7 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
         KeyEvent finishEvent = new KeyEvent(event.getDownTime(), event.getEventTime(), KeyEvent.ACTION_UP, finishKey, 0);
         Runnable finish = () -> {
             if (!dpadSeekActive || progressBar == null) return;
-            dpadSeekActive = false;
-            dpadSeekNavigator = null;
-            progressBar.dispatchKeyEvent(finishEvent);
-            keepDpadSeekControlsVisible();
+            completeDpadSeek(finishEvent);
         };
         if (event.isCanceled()) {
             dpadSeekCommitter.cancel();
@@ -467,12 +464,19 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
                 && key != KeyEvent.KEYCODE_BACK && key != KeyEvent.KEYCODE_ESCAPE) return false;
         dpadSeekCommitter.cancel();
         if (event.getAction() == KeyEvent.ACTION_UP) {
-            dpadSeekActive = false;
-            dpadSeekNavigator = null;
-            progressBar.dispatchKeyEvent(event);
-            keepDpadSeekControlsVisible();
+            completeDpadSeek(event);
         }
         return true;
+    }
+
+    private void completeDpadSeek(KeyEvent finishEvent) {
+        dpadSeekActive = false;
+        dpadSeekNavigator = null;
+        // Keep the current preview visible until its normal fade, but do not let a late
+        // buffering/play-state callback reopen it. The next remote input enables it again.
+        getPlayerAdapter().getLeanbackOverlayFragment().setShouldShowOverlay(false);
+        progressBar.dispatchKeyEvent(finishEvent);
+        keepDpadSeekControlsVisible();
     }
 
     @Override
