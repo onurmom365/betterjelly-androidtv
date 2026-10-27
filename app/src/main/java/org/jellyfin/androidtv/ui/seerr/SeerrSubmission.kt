@@ -29,12 +29,15 @@ internal suspend fun submitSeerrRequest(
 	onStep: (SeerrSubmissionStep) -> Unit = {},
 ): SeerrRequest {
 	var step = SeerrSubmissionStep.SESSION
+	var sentBody: SeerrRequestBody? = null
 	fun stage(next: SeerrSubmissionStep) { step = next; onStep(next) }
 	try {
 		stage(SeerrSubmissionStep.SESSION)
 		val user = api.me()
 		stage(SeerrSubmissionStep.TITLE)
 		val title = api.details(requireNotNull(snapshot.title).mediaType, snapshot.title.id)
+		val selection = SeerrRequestBody(title.mediaType, title.id, snapshot.seasons.sorted().takeIf { title.mediaType == "tv" })
+		title.existingRequest(selection, user.id)?.let { return it }
 		stage(SeerrSubmissionStep.LIBRARY)
 		val local = library.find(title).getOrElse { throw IOException() }
 		require(title.mediaType != "movie" || local.isEmpty())
@@ -49,10 +52,29 @@ internal suspend fun submitSeerrRequest(
 		if (service == null) require(defaultSeerrService(services) != null)
 		val body = prepareNormalSeerrRequest(user, title, snapshot.seasons, service, snapshot.profileId, snapshot.rootFolder, snapshot.tags)
 		stage(SeerrSubmissionStep.SEND)
-		val receipt = api.submit(body)
+		sentBody = body
+		val receipt = try { api.submit(body) }
+		catch (error: CancellationException) { throw error }
+		catch (error: SeerrFailure) {
+			if (error.submissionUncertain || error.status in listOf(202, 409)) {
+				try { api.details(title.mediaType, title.id).existingRequest(body, user.id, includeCompleted = true)?.let { return it } }
+				catch (cancelled: CancellationException) { throw cancelled }
+				catch (_: Exception) { }
+			}
+			throw error
+		}
 		stage(SeerrSubmissionStep.CONFIRM)
 		if (!receipt.matchesSavedRequest(body)) throw SeerrFailure(submissionUncertain = true, requestId = receipt.id.takeIf { it > 0 })
 		return api.confirmRequest(body, receipt.id)
 	} catch (error: CancellationException) { throw error }
-	catch (error: Exception) { throw SeerrSubmissionFailure(step, error) }
+	catch (error: Exception) {
+		val body = sentBody
+		val id = (error as? SeerrFailure)?.requestId
+		if (step == SeerrSubmissionStep.CONFIRM && body != null && id != null) {
+			try { api.requestRecord(id).takeIf { it.matchesSavedRequest(body) }?.let { return it.copy(confirmationRecovered = true) } }
+			catch (cancelled: CancellationException) { throw cancelled }
+			catch (_: Exception) { }
+		}
+		throw SeerrSubmissionFailure(step, error)
+	}
 }

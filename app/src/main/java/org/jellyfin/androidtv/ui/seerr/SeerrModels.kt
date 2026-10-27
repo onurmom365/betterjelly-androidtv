@@ -30,6 +30,8 @@ data class SeerrRequest(
 	val type: String = "",
 	val profileName: String? = null,
 	val createdAt: String = "",
+	val requestedBy: SeerrRequestOwner? = null,
+	@kotlinx.serialization.Transient val confirmationRecovered: Boolean = false,
 ) {
 	fun matchesSavedRequest(body: SeerrRequestBody) = id > 0 && type == body.mediaType && is4k == body.is4k &&
 		status in 1..5 && media?.tmdbId == body.mediaId && media.mediaType == body.mediaType &&
@@ -37,7 +39,8 @@ data class SeerrRequest(
 			body.seasons.orEmpty().all { chosen -> seasons.any { it.seasonNumber == chosen && it.status in 1..5 } })
 	val savedMessage get() = when (status) {
 		4 -> "Request #$id is saved in Seerr, but Seerr reports a failure while processing it for ${if (type == "tv") "Sonarr" else "Radarr"}. Check Seerr's error before retrying."
-		else -> "Confirmed request #$id in Seerr · $statusLabel. Open Requests to follow its status."
+		else -> "Confirmed request #$id in Seerr · $statusLabel. " +
+			if (confirmationRecovered) "Found by checking Seerr; no repeat submission was made." else "Open Requests to follow its status."
 	}
 	val statusLabel get() = when (status) {
 		1 -> "Pending approval"
@@ -47,6 +50,27 @@ data class SeerrRequest(
 		5 -> "Completed"
 		else -> "Unknown"
 	}
+}
+
+@Serializable data class SeerrRequestOwner(val id: Int)
+
+enum class SeerrRequestAction { RETRY, DELETE }
+data class SeerrRequestPrompt(val action: SeerrRequestAction, val request: SeerrRequest, val title: String)
+
+fun SeerrUser.canRetry(request: SeerrRequest) = request.id > 0 && request.status == 4 && permits(16)
+fun SeerrUser.canDelete(request: SeerrRequest) = request.id > 0 &&
+	(permits(16) || request.status == 1 && request.requestedBy?.id == id)
+
+internal fun SeerrTitle.existingRequest(body: SeerrRequestBody, userId: Int, includeCompleted: Boolean = false): SeerrRequest? {
+	val media = mediaInfo ?: return null
+	if (id != body.mediaId || mediaType != body.mediaType || media.tmdbId != id || media.mediaType != mediaType) return null
+	return media.requests.firstOrNull { request ->
+		request.id > 0 && request.type == body.mediaType && request.is4k == body.is4k && request.requestedBy?.id == userId &&
+		request.status in (if (includeCompleted) listOf(1, 2, 4, 5) else listOf(1, 2, 4)) &&
+		(body.mediaType == "movie" || body.seasons.orEmpty().isNotEmpty() && body.seasons.orEmpty().all { selected ->
+			request.seasons.any { it.seasonNumber == selected && it.status in 1..5 }
+		})
+	}?.copy(media = media, confirmationRecovered = true)
 }
 
 @Serializable

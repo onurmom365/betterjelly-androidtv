@@ -96,7 +96,7 @@ class SeerrTransportTests : FunSpec({
 			} } catch (_: SocketTimeoutException) { }
 		}.use { server ->
 			val request = Request.Builder().url(server.url).post("{}".toRequestBody()).build()
-			expectFailure<IOException> { SeerrTransport(CookieJar.NO_COOKIES).newCall(request).execute().use { it.close() } }
+			expectFailure<IOException> { SeerrTransport(CookieJar.NO_COOKIES).mutationCall(request).execute().use { it.close() } }
 			server.await()
 			received.get() shouldBe 1
 		}
@@ -113,7 +113,24 @@ class SeerrTransportTests : FunSpec({
 			} } catch (_: SocketTimeoutException) { }
 		}.use { server ->
 			val request = Request.Builder().url(server.url).post("{}".toRequestBody()).build()
-			SeerrTransport(CookieJar.NO_COOKIES).newCall(request).execute().use { it.code shouldBe 503 }
+			SeerrTransport(CookieJar.NO_COOKIES).mutationCall(request).execute().use { it.code shouldBe 503 }
+			server.await()
+			received.get() shouldBe 1
+		}
+	}
+	test("a request DELETE receiving a retry hint is sent once") {
+		val received = AtomicInteger()
+		SeerrLoopbackServer { server ->
+			try { repeat(2) {
+				server.accept().use { socket ->
+					socket.readTestRequest().startsWith("DELETE") shouldBe true
+					received.incrementAndGet()
+					socket.testResponse("503 Service Unavailable", close = true, extra = "Retry-After: 0\r\n")
+				}
+			} } catch (_: SocketTimeoutException) { }
+		}.use { server ->
+			val request = Request.Builder().url(server.url).delete("".toRequestBody()).build()
+			SeerrTransport(CookieJar.NO_COOKIES).mutationCall(request).execute().use { it.code shouldBe 503 }
 			server.await()
 			received.get() shouldBe 1
 		}

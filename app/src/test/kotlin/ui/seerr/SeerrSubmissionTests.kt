@@ -146,10 +146,45 @@ class SeerrSubmissionTests : FunSpec({
 		title.copy(mediaInfo = title.mediaInfo!!.copy(status = 5)).displayStatus() shouldBe "Available"
 		title.copy(mediaInfo = title.mediaInfo!!.copy(requests = listOf(failed, SeerrRequest(43, status = 2)))).displayStatus() shouldBe "Requested"
 	}
-	test("a malformed POST receipt cannot appear successful") {
+	test("an incomplete POST receipt can only confirm through a matching saved-record read") {
 		val calls = mutableListOf<String>()
 		val client = api(calls) { request -> if (request.method == "POST") 201 to """{"id":42}""" else null }
-		expectFailure<SeerrSubmissionFailure> { submitSeerrRequest(client, library, snapshot) }.step shouldBe SeerrSubmissionStep.CONFIRM
+		val receipt = submitSeerrRequest(client, library, snapshot)
+		receipt.id shouldBe 42
+		receipt.confirmationRecovered shouldBe true
+		calls.count { it.startsWith("POST") } shouldBe 1
+	}
+	test("lost submission response is reconciled against the signed-in user's saved season selection with one POST") {
+		val calls = mutableListOf<String>()
+		var sent = false
+		val owned = receiptJson.replace("\"id\":42", "\"id\":42,\"requestedBy\":{\"id\":4}")
+		val client = api(calls) { request -> when {
+			request.method == "POST" -> { sent = true; throw IOException("response lost") }
+			sent && request.url.encodedPath.endsWith("/tv/10") -> 200 to titleJson.dropLast(1) + ",\"mediaInfo\":{\"tmdbId\":10,\"mediaType\":\"tv\",\"requests\":[$owned]}}"
+			else -> null
+		} }
+		val receipt = submitSeerrRequest(client, library, snapshot)
+		receipt.confirmationRecovered shouldBe true
+		receipt.id shouldBe 42
+		calls.count { it.startsWith("POST") } shouldBe 1
+	}
+	test("an already saved request found during preflight is returned without another POST") {
+		val calls = mutableListOf<String>()
+		val owned = receiptJson.replace("\"id\":42", "\"id\":42,\"requestedBy\":{\"id\":4}")
+		val client = api(calls) { request -> if (request.url.encodedPath.endsWith("/tv/10"))
+			200 to titleJson.dropLast(1) + ",\"mediaInfo\":{\"tmdbId\":10,\"mediaType\":\"tv\",\"requests\":[$owned]}}" else null }
+		submitSeerrRequest(client, library, snapshot).confirmationRecovered shouldBe true
+		calls.any { it.startsWith("POST") } shouldBe false
+	}
+	test("reconciliation cannot claim another user's request or an unrequested season") {
+		val body = SeerrRequestBody("tv", 10, listOf(1))
+		val other = SeerrRequest(42, 2, seasons = listOf(SeerrSeasonRequest(1, 2)), type = "tv", requestedBy = SeerrRequestOwner(9))
+		val title = SeerrTitle(10, "tv", mediaInfo = SeerrMediaInfo(tmdbId = 10, mediaType = "tv", requests = listOf(other)))
+		title.existingRequest(body, 4) shouldBe null
+		title.existingRequest(body.copy(seasons = listOf(2)), 9) shouldBe null
+		title.existingRequest(body, 9)?.id shouldBe 42
+		title.copy(id = 11).existingRequest(body, 9) shouldBe null
+		title.copy(mediaInfo = title.mediaInfo!!.copy(tmdbId = 11)).existingRequest(body, 9) shouldBe null
 	}
 	test("catalog null metadata and unrelated people do not discard valid title results") {
 		val client = SeerrApi(MemorySeerrStore(), callFactory = factory { 200 to """{"results":[{"id":1,"mediaType":"person","name":null},{"id":10,"mediaType":"tv","name":"Test series","overview":null,"voteAverage":null,"firstAirDate":null,"posterPath":null}]}""" })

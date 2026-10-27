@@ -11,6 +11,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.concurrent.TimeUnit
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Cookie
@@ -46,22 +49,27 @@ class SeerrFailure(val status: Int = 0, val submissionUncertain: Boolean = false
 
 internal class SeerrCookieJar(private val origin: HttpUrl, private val store: SeerrSessionStore) : CookieJar {
 	private var cookies = emptyList<Cookie>()
-	init { try { reload() } catch (_: SeerrFailure) { /* The explicit session check exposes this without crashing the screen. */ } }
+	private var loaded = false
 	private fun sameOrigin(url: HttpUrl) = url.scheme == origin.scheme && url.host == origin.host && url.port == origin.port
 	private fun valid(cookie: Cookie) = cookie.domain == origin.host && cookie.expiresAt > System.currentTimeMillis()
-	@Synchronized override fun loadForRequest(url: HttpUrl): List<Cookie> =
-		if (sameOrigin(url)) cookies.filter { valid(it) && it.matches(url) } else emptyList()
+	@Synchronized override fun loadForRequest(url: HttpUrl): List<Cookie> {
+		if (!sameOrigin(url)) return emptyList()
+		if (!loaded) reload() // OkHttp invokes this on its worker, not while the screen is being composed.
+		return cookies.filter { valid(it) && it.matches(url) }
+	}
 	@Synchronized override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
 		if (!sameOrigin(url)) return
 		this.cookies = (this.cookies.filter { old -> cookies.none { it.name == old.name && it.path == old.path } } + cookies)
 			.filter { valid(it) }
+		loaded = true
 		try { store.write(this.cookies.map { it.toString() }) }
 		catch (_: Exception) { throw IOException("Secure session storage unavailable") }
 	}
-	@Synchronized fun clear() { cookies = emptyList(); store.clear() }
+	@Synchronized fun clear() { cookies = emptyList(); loaded = true; store.clear() }
 	@Synchronized fun reload(): Boolean {
 		val saved = try { store.read() } catch (_: Exception) { throw SeerrFailure(secureSessionUnavailable = true) }
 		cookies = saved.mapNotNull { Cookie.parse(origin, it) }.filter { valid(it) }
+		loaded = true
 		return cookies.isNotEmpty()
 	}
 }
@@ -75,14 +83,24 @@ class SeerrApi internal constructor(
 	private val jar = SeerrCookieJar(origin, store)
 	// Dedicated transport: GET connection recovery, single-attempt mutations, no Jellyfin headers/logging.
 	private val transport = SeerrTransport(jar)
+	private val catalog = SeerrTimedCache<String, SeerrTitle>(64, TimeUnit.MINUTES.toNanos(5))
+	private val searches = SeerrTimedCache<String, SeerrPage>(12, TimeUnit.SECONDS.toNanos(30))
+	private val navigationUser = SeerrTimedCache<Unit, SeerrUser>(1, TimeUnit.SECONDS.toNanos(30))
+	private fun checkAccess() { if (!accessAllowed()) throw SeerrFailure(403) }
+	fun cachedTitle(type: String, id: Int): SeerrTitle? = if (accessAllowed()) catalog.get("$type/$id") else null
+	fun invalidateCatalog() { catalog.clear(); searches.clear() }
 
-	private suspend fun exchange(request: Request, plex: Boolean = false, submitting: Boolean = false): String =
+	private suspend fun exchange(request: Request, plex: Boolean = false, submitting: Boolean = false, emptySuccess: Boolean = false): String =
 		suspendCancellableCoroutine { continuation ->
 			if (!accessAllowed()) {
 				continuation.resumeWith(Result.failure(SeerrFailure(403)))
 				return@suspendCancellableCoroutine
 			}
-			val call = callFactory?.newCall(request) ?: if (plex) transport.plexCall(request) else transport.newCall(request)
+			val call = callFactory?.newCall(request) ?: when {
+				plex -> transport.plexCall(request)
+				submitting -> transport.mutationCall(request)
+				else -> transport.newCall(request)
+			}
 			continuation.invokeOnCancellation { call.cancel() }
 			call.enqueue(object : Callback {
 				override fun onFailure(call: Call, e: IOException) {
@@ -92,6 +110,7 @@ class SeerrApi internal constructor(
 					val result = runCatching {
 						response.use {
 							if (!it.isSuccessful || it.code == 202) throw SeerrFailure(it.code)
+							if (emptySuccess && it.code == 204) return@use ""
 							val body = it.body ?: throw SeerrFailure(submissionUncertain = submitting)
 							val source = body.source()
 							source.request(3 * 1024 * 1024 + 1L)
@@ -104,30 +123,36 @@ class SeerrApi internal constructor(
 			})
 		}
 
-	private fun request(path: String, query: Map<String, String> = emptyMap(), body: String? = null): Request {
+	private fun request(path: String, query: Map<String, String> = emptyMap(), body: String? = null, httpDelete: Boolean = false): Request {
 		require(path.startsWith('/') && !path.contains(".."))
 		val url = origin.newBuilder().encodedPath("/api/v1$path").apply { query.forEach { (key, value) -> addQueryParameter(key, value) } }.build()
 		return Request.Builder().url(url).header("Accept", "application/json").apply {
-			if (body != null) post(body.toRequestBody("application/json".toMediaType()))
+			if (httpDelete) delete("".toRequestBody()) else if (body != null) post(body.toRequestBody("application/json".toMediaType()))
 		}.build()
 	}
-	private inline fun <reified T> decode(body: String): T = try { seerrJson.decodeFromString(body) }
-	catch (_: Exception) { throw SeerrFailure(invalidResponse = true) }
+	private suspend inline fun <reified T> decode(body: String): T = withContext(Dispatchers.Default) {
+		try { seerrJson.decodeFromString(body) } catch (_: Exception) { throw SeerrFailure(invalidResponse = true) }
+	}
 
-	suspend fun me(): SeerrUser = decode(exchange(request("/auth/me")))
+	suspend fun me(): SeerrUser = decode<SeerrUser>(exchange(request("/auth/me"))).also { navigationUser.put(Unit, it) }
+	suspend fun meForNavigation(): SeerrUser { checkAccess(); return navigationUser.get(Unit) ?: me() }
 	suspend fun login(email: String, password: String): SeerrUser {
 		jar.clear()
+		navigationUser.clear(); invalidateCatalog()
 		val body = buildJsonObject { put("email", email); put("password", password) }.toString()
 		exchange(request("/auth/local", body = body))
 		return me()
 	}
-	fun disconnect() = jar.clear()
-	fun restoreSession() = jar.reload()
+	fun disconnect() { jar.clear(); navigationUser.clear(); invalidateCatalog() }
+	fun restoreSession() = jar.reload().also { if (!it) navigationUser.clear() }
 	suspend fun titles(query: String, type: String, page: Int): SeerrPage {
+		checkAccess()
+		val cacheKey = "${query.trim().lowercase()}|$type|$page"
+		searches.get(cacheKey)?.let { return it }
 		val path = if (query.isBlank()) "/discover/${if (type == "movie") "movies" else "tv"}" else "/search"
 		val params = mutableMapOf("page" to page.toString()).apply { if (query.isNotBlank()) put("query", query.trim()) }
 		val response = exchange(request(path, params))
-		return try {
+		return withContext(Dispatchers.Default) { try {
 			// Filter heterogeneous search results before decoding movie/TV metadata.
 			val page = seerrJson.parseToJsonElement(response) as JsonObject
 			val entries = page["results"] as JsonArray
@@ -136,21 +161,35 @@ class SeerrApi internal constructor(
 				kind in listOf("movie", "tv") || (query.isBlank() && kind.isNullOrBlank())
 			}
 			val results = seerrCatalogJson.decodeFromJsonElement(SeerrPage.serializer(), JsonObject(page + ("results" to JsonArray(filtered))))
-			results.copy(results = results.results.map { if (it.mediaType.isBlank()) it.copy(mediaType = type) else it })
-		} catch (_: Exception) { throw SeerrFailure(invalidResponse = true) }
+			results.copy(results = results.results.map { if (it.mediaType.isBlank()) it.copy(mediaType = type) else it }).also { result ->
+				searches.put(cacheKey, result)
+				result.results.forEach { catalog.put("${it.mediaType}/${it.id}", it) }
+			}
+		} catch (_: Exception) { throw SeerrFailure(invalidResponse = true) } }
 	}
 	suspend fun details(type: String, id: Int): SeerrTitle {
 		require(type in listOf("movie", "tv") && id > 0)
-		return decode<SeerrTitle>(exchange(request("/$type/$id"))).copy(mediaType = type)
+		return decode<SeerrTitle>(exchange(request("/$type/$id"))).copy(mediaType = type).also { catalog.put("$type/$id", it) }
 	}
+	suspend fun metadata(type: String, id: Int): SeerrTitle { checkAccess(); return cachedTitle(type, id) ?: details(type, id) }
 	suspend fun services(type: String): List<SeerrService> = decode(exchange(request("/service/${serviceType(type)}")))
 	suspend fun service(type: String, id: Int): SeerrServiceDetails = decode(exchange(request("/service/${serviceType(type)}/$id")))
 	private fun serviceType(type: String): String { require(type in listOf("movie", "tv")); return if (type == "movie") "radarr" else "sonarr" }
 	suspend fun submit(body: SeerrRequestBody): SeerrRequest {
 		// Resolution belongs to the selected profile; this fork does not create a separate 4K request lane.
 		require(!body.is4k)
+		invalidateCatalog()
 		val response = exchange(request("/request", body = seerrJson.encodeToString(body)), submitting = true)
 		return try { decode<SeerrRequest>(response) } catch (_: Exception) { throw SeerrFailure(submissionUncertain = true) }
+	}
+	suspend fun requestRecord(id: Int): SeerrRequest { require(id > 0); return decode(exchange(request("/request/$id"))) }
+	suspend fun retryRequest(id: Int): SeerrRequest {
+		require(id > 0); invalidateCatalog()
+		return decode(exchange(request("/request/$id/retry", body = "{}"), submitting = true))
+	}
+	suspend fun deleteRequest(id: Int) {
+		require(id > 0); invalidateCatalog()
+		exchange(request("/request/$id", httpDelete = true), submitting = true, emptySuccess = true)
 	}
 
 	/** A POST response alone is not a saved-record confirmation. This read never retries the POST. */
@@ -179,6 +218,7 @@ class SeerrApi internal constructor(
 		val result: PlexPin = decode(exchange(plexRequest("/${pin.id}", identifier), plex = true))
 		val token = result.authToken?.takeIf { it.isNotBlank() } ?: return false
 		jar.clear()
+		navigationUser.clear(); invalidateCatalog()
 		exchange(request("/auth/plex", body = buildJsonObject { put("authToken", token) }.toString()))
 		return true // Token is exchanged once; never retained or placed in UI state/storage.
 	}
