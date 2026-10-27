@@ -1,8 +1,9 @@
 package org.jellyfin.androidtv.ui.playback.overlay;
 
-/** Keeps quick taps in one native seek session, with no confirmation button required. */
+/** Gives deliberate taps time to inspect thumbnails, without slowing release after a hold. */
 final class DpadSeekCommitter {
-    static final long QUIET_PERIOD_MS = 250;
+    static final long TAP_QUIET_PERIOD_MS = 1500;
+    static final long HOLD_QUIET_PERIOD_MS = 250;
 
     interface Scheduler {
         void postDelayed(Runnable task, long delayMs);
@@ -12,6 +13,7 @@ final class DpadSeekCommitter {
     private final Scheduler scheduler;
     private Runnable pendingFinish;
     private final Runnable finishTask = this::flush;
+    private boolean held;
 
     DpadSeekCommitter(Scheduler scheduler) {
         this.scheduler = scheduler;
@@ -22,10 +24,15 @@ final class DpadSeekCommitter {
         pendingFinish = null;
     }
 
+    void onKeyDown(int repeatCount) {
+        cancel();
+        held = repeatCount > 0;
+    }
+
     void finishAfterPause(Runnable finish) {
         cancel();
         pendingFinish = finish;
-        scheduler.postDelayed(finishTask, QUIET_PERIOD_MS);
+        scheduler.postDelayed(finishTask, held ? HOLD_QUIET_PERIOD_MS : TAP_QUIET_PERIOD_MS);
     }
 
     void flush() {

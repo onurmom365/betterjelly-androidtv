@@ -929,6 +929,14 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     public void seek(long pos, boolean skipToNext) {
+        seek(pos, skipToNext, false);
+    }
+
+    public void seekFromProgressBar(long pos) {
+        seek(pos, false, true);
+    }
+
+    private void seek(long pos, boolean skipToNext, boolean fromProgressBar) {
         if (pos <= 0) pos = 0;
 
         Timber.i("Trying to seek from %s to %d", mCurrentPosition, pos);
@@ -938,7 +946,9 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             return;
         }
 
-        if (wasSeeking) {
+        // A native player seek may be replaced before the next 500ms progress report.
+        // Keep the overlap guard when a seek needs an asynchronous stream rebuild.
+        if (wasSeeking && !(fromProgressBar && mVideoManager.isSeekable())) {
             Timber.d("Previous seek has not finished - cancelling seek from %s to %d", mCurrentPosition, pos);
             if (isPaused()) {
                 refreshCurrentPosition();
@@ -1295,6 +1305,12 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     public long getCurrentPosition() {
         // don't report the real position if seeking
         return !isPlaying() && mSeekPosition != -1 ? mSeekPosition : mCurrentPosition;
+    }
+
+    public long getSeekBarPosition() {
+        // seek() resumes immediately; the cached playback position catches up on the next
+        // progress report. Do not let the timeline or the next preview jump to that old value.
+        return mSeekPosition != -1 ? mSeekPosition : mCurrentPosition;
     }
 
     public boolean isPaused() {

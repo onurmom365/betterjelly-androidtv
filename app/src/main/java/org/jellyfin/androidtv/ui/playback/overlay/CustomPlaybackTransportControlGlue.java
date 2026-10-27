@@ -98,7 +98,7 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
     private View primarySeekControls;
     private View secondarySeekControls;
     private boolean dpadSeekActive;
-    private int dpadSeekDirection;
+    private DpadSeekNavigator dpadSeekNavigator;
 
     CustomPlaybackTransportControlGlue(Context context, VideoPlayerAdapter playerAdapter, PlaybackController playbackController) {
         super(context, playerAdapter);
@@ -207,6 +207,7 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
                 primarySeekControls = null;
                 secondarySeekControls = null;
                 dpadSeekActive = false;
+                dpadSeekNavigator = null;
                 vh.setOnKeyListener(null);
             }
         };
@@ -414,17 +415,22 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
 
     public void previewDpadSeek(KeyEvent event) {
         if (progressBar == null || !progressBar.requestFocus()) return;
-        // Re-anchor a direction change so the backward/forward lengths remain independent.
-        if (dpadSeekActive && dpadSeekDirection != event.getKeyCode()) dpadSeekCommitter.flush();
-        dpadSeekCommitter.cancel();
+        dpadSeekCommitter.onKeyDown(event.getRepeatCount());
         if (!dpadSeekActive) {
             if (getSeekProvider() instanceof CustomSeekProvider) {
                 UserSettingPreferences prefs = KoinJavaComponent.<UserSettingPreferences>get(UserSettingPreferences.class);
-                ((CustomSeekProvider) getSeekProvider()).setRelativeSeekAnchor(
-                        getControlsRow().getCurrentPosition(), prefs.get(UserSettingPreferences.Companion.getSkipBackLength()));
+                dpadSeekNavigator = new DpadSeekNavigator(getPlayerAdapter().getCurrentPosition(),
+                        getPlayerAdapter().getDuration(), prefs.get(UserSettingPreferences.Companion.getSkipBackLength()),
+                        prefs.get(UserSettingPreferences.Companion.getSkipForwardLength()));
+                ((CustomSeekProvider) getSeekProvider()).setDpadSeekPositions(dpadSeekNavigator.getPositions());
+                getControlsRow().setCurrentPosition(getPlayerAdapter().getCurrentPosition());
             }
             dpadSeekActive = true;
-            dpadSeekDirection = event.getKeyCode();
+        }
+        if (dpadSeekNavigator != null) {
+            getControlsRow().setCurrentPosition(dpadSeekNavigator.positionBeforeStep(
+                    getControlsRow().getCurrentPosition(), event.getKeyCode() == KeyEvent.KEYCODE_DPAD_RIGHT,
+                    event.getRepeatCount() > 0));
         }
         progressBar.dispatchKeyEvent(event);
         keepDpadSeekControlsVisible();
@@ -438,6 +444,7 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
         Runnable finish = () -> {
             if (!dpadSeekActive || progressBar == null) return;
             dpadSeekActive = false;
+            dpadSeekNavigator = null;
             progressBar.dispatchKeyEvent(finishEvent);
             keepDpadSeekControlsVisible();
         };
@@ -451,6 +458,21 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
 
     public void cancelDpadSeekCommit() {
         dpadSeekCommitter.cancel();
+    }
+
+    public boolean finishDpadSeekOnKey(KeyEvent event) {
+        if (!dpadSeekActive || !isProgressBarFocused()) return false;
+        int key = event.getKeyCode();
+        if (key != KeyEvent.KEYCODE_DPAD_CENTER && key != KeyEvent.KEYCODE_ENTER
+                && key != KeyEvent.KEYCODE_BACK && key != KeyEvent.KEYCODE_ESCAPE) return false;
+        dpadSeekCommitter.cancel();
+        if (event.getAction() == KeyEvent.ACTION_UP) {
+            dpadSeekActive = false;
+            dpadSeekNavigator = null;
+            progressBar.dispatchKeyEvent(event);
+            keepDpadSeekControlsVisible();
+        }
+        return true;
     }
 
     @Override

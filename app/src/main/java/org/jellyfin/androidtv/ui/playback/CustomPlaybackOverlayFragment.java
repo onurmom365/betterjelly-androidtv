@@ -485,6 +485,11 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
         @Override
         public boolean onKey(View v, int keyCode, KeyEvent event) {
             PlaybackController controller = playbackControllerContainer.getValue().getPlaybackController();
+            if (leanbackOverlayFragment != null && leanbackOverlayFragment.getPlayerGlue() != null
+                    && leanbackOverlayFragment.getPlayerGlue().finishDpadSeekOnKey(event)) {
+                setFadingEnabled(true);
+                return true;
+            }
             boolean allowDpadSeek = controller != null && controller.canSeek()
                     && binding != null && leanbackOverlayFragment != null
                     && leanbackOverlayFragment.getPlayerGlue() != null

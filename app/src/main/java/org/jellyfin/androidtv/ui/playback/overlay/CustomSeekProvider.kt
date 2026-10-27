@@ -31,6 +31,10 @@ class CustomSeekProvider(
 	private val imageRequests = mutableMapOf<Int, Disposable>()
 	private var relativePositions: LongArray? = null
 
+	fun setDpadSeekPositions(positions: LongArray) {
+		relativePositions = positions
+	}
+
 	fun setRelativeSeekAnchor(position: Long, backwardTime: Long) {
 		val duration = videoPlayerAdapter.duration.coerceAtLeast(0)
 		val anchor = position.coerceIn(0, duration)

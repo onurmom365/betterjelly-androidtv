@@ -49,7 +49,7 @@ public class VideoPlayerAdapter extends PlayerAdapter {
 
     @Override
     public void seekTo(long positionInMs) {
-        playbackController.seek(positionInMs);
+        playbackController.seekFromProgressBar(positionInMs);
         updateCurrentPosition();
     }
 
@@ -74,7 +74,7 @@ public class VideoPlayerAdapter extends PlayerAdapter {
 
     @Override
     public long getCurrentPosition() {
-        return playbackController.getCurrentPosition();
+        return playbackController.getSeekBarPosition();
     }
 
     @Override
