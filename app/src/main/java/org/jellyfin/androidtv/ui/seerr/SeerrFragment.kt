@@ -16,6 +16,8 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.Text
@@ -49,7 +51,7 @@ class SeerrFragment : Fragment() {
 			}
 			val state by model.state.collectAsState()
 			LaunchedEffect(model) {
-				model.start(arguments?.getString("query").orEmpty(), type = arguments?.getString("type"),
+				model.start(arguments?.getString("query").orEmpty(), force = true, type = arguments?.getString("type"),
 					id = arguments?.getInt("mediaId")?.takeIf { it > 0 }, history = arguments?.getBoolean("history") == true)
 			}
 			val secure = state.user == null
@@ -59,7 +61,16 @@ class SeerrFragment : Fragment() {
 				if (secure) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
 				onDispose { if (secure && !wasSecure) window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
 			}
-			DisposableEffect(model) { onDispose { model.leave() } }
+			DisposableEffect(model) {
+				val owner = viewLifecycleOwner
+				var wasPaused = false
+				val observer = LifecycleEventObserver { _, event ->
+					if (event == Lifecycle.Event.ON_PAUSE) wasPaused = true
+					if (event == Lifecycle.Event.ON_RESUME && wasPaused) { wasPaused = false; model.resumed() }
+				}
+				owner.lifecycle.addObserver(observer)
+				onDispose { owner.lifecycle.removeObserver(observer); model.leave() }
+			}
 			val back = {
 				if (!state.submitting) {
 					if (state.requestPrompt != null) model.dismissRequestAction()

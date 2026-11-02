@@ -185,8 +185,10 @@ private fun Message(message: String) = Text(message, color = Muted, fontSize = 1
 
 @Composable
 private fun SignIn(s: SeerrUiState, model: SeerrViewModel) {
-	var email by remember(model) { mutableStateOf("") }
-	var password by remember(model) { mutableStateOf("") }
+	val options = s.loginOptions
+	var identity by remember(model, options) { mutableStateOf("") }
+	var password by remember(model, options) { mutableStateOf("") }
+	var jellyfin by remember(model, options) { mutableStateOf(options?.jellyfin == true) }
 	LazyColumn(Modifier.widthIn(max = 600.dp).padding(horizontal = 40.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
 		item { Text("Your next movie starts here.", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold) }
 		item { Text("Connect Seerr to discover titles and manage requests alongside your Jellyfin library.", color = Muted, fontSize = 17.sp) }
@@ -195,28 +197,42 @@ private fun SignIn(s: SeerrUiState, model: SeerrViewModel) {
 			item { Text(s.pinCode, color = Accent, fontSize = 44.sp, fontWeight = FontWeight.Bold) }
 			item { Action("Cancel", onClick = model::cancelPlex) }
 		} else {
-			item { Action("Continue with Plex", !s.busy, primary = true) { password = ""; model.loginPlex() } }
-			item { Text("Or sign in with your Seerr account", color = Muted) }
-			item { CredentialInput("Email", email, false, !s.busy) { email = it } }
-			item { CredentialInput("Password", password, true, !s.busy) { password = it } }
-			item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-				Action("Sign in", !s.busy && email.isNotBlank() && password.isNotBlank(), primary = true) {
-					val secret = password; password = ""; model.login(email, secret)
+			if (options == null) {
+				item { Text(if (s.busy) "Checking available sign-in methods…" else "Sign-in methods could not be loaded.", color = Muted) }
+				item { Action("Retry connection", !s.busy) { model.retryLoginOptions() } }
+			} else {
+				if (options.plex) item { Action("Continue with Plex", !s.busy, primary = true) { password = ""; model.loginPlex() } }
+				if (options.jellyfin || options.local) {
+					if (options.jellyfin && options.local) item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+						Action("Jellyfin account", !s.busy, selected = jellyfin) { jellyfin = true; identity = ""; password = "" }
+						Action("Seerr account", !s.busy, selected = !jellyfin) { jellyfin = false; identity = ""; password = "" }
+					} }
+					item { Text(if (jellyfin) "Sign in with your Jellyfin username and password." else "Sign in with your Seerr email and password.", color = Muted) }
+					item { CredentialInput(if (jellyfin) "Jellyfin username" else "Email", identity, false, !s.busy,
+						keyboardType = if (jellyfin) KeyboardType.Text else KeyboardType.Email) { identity = it } }
+					item { CredentialInput("Password", password, true, !s.busy) { password = it } }
+					item { Action(if (jellyfin) "Sign in with Jellyfin" else "Sign in with Seerr",
+						!s.busy && identity.isNotBlank() && (jellyfin || password.isNotBlank()), primary = true) {
+						val secret = password; password = ""
+						if (jellyfin) model.loginJellyfin(identity, secret) else model.login(identity, secret)
+					} }
 				}
-				Action("Retry connection", !s.busy) { model.start(s.query, force = true) }
-			} }
+				if (!options.jellyfin && !options.local && !options.plex) item { Text("No supported sign-in method is enabled on this Seerr server.", color = Muted) }
+				item { Action("Refresh sign-in methods", !s.busy) { password = ""; model.retryLoginOptions() } }
+			}
 		}
 	}
 }
 
 @Composable
-private fun CredentialInput(label: String, value: String, secret: Boolean, enabled: Boolean, onChange: (String) -> Unit) {
+private fun CredentialInput(label: String, value: String, secret: Boolean, enabled: Boolean,
+	keyboardType: KeyboardType = if (secret) KeyboardType.Password else KeyboardType.Email, onChange: (String) -> Unit) {
 	Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
 		Text(label, color = Muted)
 		BasicTextField(value, onChange, enabled = enabled, singleLine = true,
 			modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(9.dp)).border(1.dp, Line, RoundedCornerShape(9.dp)).padding(14.dp),
 			textStyle = JellyfinTheme.typography.default.copy(color = Color.White, fontSize = 18.sp),
-			keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else KeyboardType.Email, autoCorrectEnabled = false),
+			keyboardOptions = KeyboardOptions(keyboardType = keyboardType, autoCorrectEnabled = false),
 			visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None)
 	}
 }

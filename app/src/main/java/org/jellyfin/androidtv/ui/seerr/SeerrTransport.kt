@@ -14,6 +14,7 @@ internal class SeerrTransport(jar: CookieJar) : Call.Factory {
 		.retryOnConnectionFailure(false).connectTimeout(8, TimeUnit.SECONDS).readTimeout(12, TimeUnit.SECONDS)
 		.callTimeout(15, TimeUnit.SECONDS).build()
 	private val reads = writes.newBuilder().retryOnConnectionFailure(true).build()
+	private val publicReads = reads.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
 	private val mutations = writes.newBuilder().readTimeout(40, TimeUnit.SECONDS).callTimeout(45, TimeUnit.SECONDS).build()
 	private val plex = writes.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
 
@@ -21,6 +22,7 @@ internal class SeerrTransport(jar: CookieJar) : Call.Factory {
 		if (request.method == "GET") reads.newCall(request) else writes.newCall(singleAttempt(request))
 
 	fun plexCall(request: Request): Call = plex.newCall(singleAttempt(request))
+	fun publicCall(request: Request): Call = publicReads.newCall(request)
 	fun mutationCall(request: Request): Call = mutations.newCall(singleAttempt(request))
 
 	private fun singleAttempt(request: Request): Request {

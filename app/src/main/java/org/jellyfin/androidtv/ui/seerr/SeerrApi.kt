@@ -31,7 +31,9 @@ internal val seerrJson = Json { ignoreUnknownKeys = true; explicitNulls = false 
 internal val seerrCatalogJson = Json(seerrJson) { coerceInputValues = true }
 
 class SeerrFailure(val status: Int = 0, val submissionUncertain: Boolean = false,
-	val invalidResponse: Boolean = false, val requestId: Int? = null, val secureSessionUnavailable: Boolean = false) : IOException() {
+	val invalidResponse: Boolean = false, val requestId: Int? = null, val secureSessionUnavailable: Boolean = false,
+	val connectionIssue: SeerrConnectionIssue? = null) : IOException(), SeerrRetryableReadFailure {
+	override val retryableRead get() = !submissionUncertain && (status in listOf(408, 502, 503, 504) || connectionIssue?.retryable == true)
 	val userMessage get() = when {
 		submissionUncertain -> (requestId?.let { "Seerr returned request #$it, but its saved record could not be confirmed. " }
 			?: "The result could not be confirmed. ") + "Check status before trying again; do not submit a duplicate."
@@ -39,12 +41,15 @@ class SeerrFailure(val status: Int = 0, val submissionUncertain: Boolean = false
 		status == 409 || status == 202 -> "Already requested or no additional seasons are available. Refresh this title."
 		status == 429 -> "Seerr is busy. Please try again shortly."
 		status in 300..399 -> "Seerr redirected the connection. Check the server address."
-		status > 0 -> "Seerr could not complete this action. Refresh its status or try again later."
+		status > 0 -> "Seerr returned HTTP $status. Refresh its status or try again later."
 		secureSessionUnavailable -> "The saved Seerr session could not be opened securely. Retry the session check, or sign in again."
 		invalidResponse -> "Seerr responded, but its data could not be read. Please refresh and try again."
+		connectionIssue != null -> "${connectionIssue.description} Retry the connection; saved sessions have been kept."
 		else -> "Seerr is unavailable. Library browsing and playback still work; return to your library or retry."
 	}
 }
+
+internal class SeerrSessionWriteFailure : IOException("Secure session storage unavailable")
 
 internal class SeerrCookieJar(private val origin: HttpUrl, private val store: SeerrSessionStore) : CookieJar {
 	private var cookies = emptyList<Cookie>()
@@ -62,7 +67,7 @@ internal class SeerrCookieJar(private val origin: HttpUrl, private val store: Se
 			.filter { valid(it) }
 		loaded = true
 		try { store.write(this.cookies.map { it.toString() }) }
-		catch (_: Exception) { throw IOException("Secure session storage unavailable") }
+		catch (_: Exception) { throw SeerrSessionWriteFailure() }
 	}
 	@Synchronized fun clear() { cookies = emptyList(); loaded = true; store.clear() }
 	@Synchronized fun reload(): Boolean {
@@ -90,13 +95,19 @@ class SeerrApi internal constructor(
 	fun cachedTitle(type: String, id: Int): SeerrTitle? = if (accessAllowed()) catalog.get("$type/$id") else null
 	fun invalidateCatalog() { catalog.clear(); searches.clear() }
 
-	private suspend fun exchange(request: Request, plex: Boolean = false, submitting: Boolean = false, emptySuccess: Boolean = false): String =
+	private suspend fun exchange(request: Request, plex: Boolean = false, submitting: Boolean = false, emptySuccess: Boolean = false,
+		anonymous: Boolean = false): String =
+		if (request.method == "GET" && !plex && !submitting) recoverSeerrRead { exchangeOnce(request, plex, submitting, emptySuccess, anonymous) }
+		else exchangeOnce(request, plex, submitting, emptySuccess, anonymous)
+
+	private suspend fun exchangeOnce(request: Request, plex: Boolean, submitting: Boolean, emptySuccess: Boolean, anonymous: Boolean): String =
 		suspendCancellableCoroutine { continuation ->
 			if (!accessAllowed()) {
 				continuation.resumeWith(Result.failure(SeerrFailure(403)))
 				return@suspendCancellableCoroutine
 			}
 			val call = callFactory?.newCall(request) ?: when {
+				anonymous -> transport.publicCall(request)
 				plex -> transport.plexCall(request)
 				submitting -> transport.mutationCall(request)
 				else -> transport.newCall(request)
@@ -104,7 +115,9 @@ class SeerrApi internal constructor(
 			continuation.invokeOnCancellation { call.cancel() }
 			call.enqueue(object : Callback {
 				override fun onFailure(call: Call, e: IOException) {
-					if (continuation.isActive) continuation.resumeWith(Result.failure(SeerrFailure(submissionUncertain = submitting)))
+					if (continuation.isActive) continuation.resumeWith(Result.failure(if (e is SeerrSessionWriteFailure)
+						SeerrFailure(submissionUncertain = submitting, secureSessionUnavailable = true)
+						else SeerrFailure(submissionUncertain = submitting, connectionIssue = SeerrConnectionIssue.from(e))))
 				}
 				override fun onResponse(call: Call, response: Response) {
 					val result = runCatching {
@@ -117,7 +130,8 @@ class SeerrApi internal constructor(
 							if (source.buffer.size > 3 * 1024 * 1024) throw SeerrFailure(submissionUncertain = submitting)
 							source.readUtf8()
 						}
-					}.recoverCatching { throw (it as? SeerrFailure ?: SeerrFailure(submissionUncertain = submitting)) }
+					}.recoverCatching { throw (it as? SeerrFailure ?: SeerrFailure(submissionUncertain = submitting,
+						connectionIssue = (it as? IOException)?.let(SeerrConnectionIssue::from))) }
 					if (continuation.isActive) continuation.resumeWith(result)
 				}
 			})
@@ -136,6 +150,17 @@ class SeerrApi internal constructor(
 
 	suspend fun me(): SeerrUser = decode<SeerrUser>(exchange(request("/auth/me"))).also { navigationUser.put(Unit, it) }
 	suspend fun meForNavigation(): SeerrUser { checkAccess(); return navigationUser.get(Unit) ?: me() }
+	fun invalidateNavigationCheck() { navigationUser.clear() }
+	suspend fun loginOptions(): SeerrLoginOptions = decode(exchange(request("/settings/public"), anonymous = true))
+	suspend fun loginJellyfin(username: String, password: String): SeerrUser {
+		if (!loginOptions().jellyfin) throw SeerrFailure(403)
+		jar.clear()
+		navigationUser.clear(); invalidateCatalog()
+		// Match Seerr's configured-server login. Never send a server override, Jellyfin token or API key.
+		val body = buildJsonObject { put("username", username); put("password", password); put("email", username) }.toString()
+		exchange(request("/auth/jellyfin", body = body))
+		return me()
+	}
 	suspend fun login(email: String, password: String): SeerrUser {
 		jar.clear()
 		navigationUser.clear(); invalidateCatalog()

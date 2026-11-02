@@ -36,6 +36,7 @@ data class SeerrUiState(
 	val historyMode: Boolean = false, val historyFilter: String = "all", val historyPage: Int = 1, val historyPages: Int = 1,
 	val history: List<SeerrHistoryEntry> = emptyList(), val historyWarning: String? = null,
 	val requestPrompt: SeerrRequestPrompt? = null, val blockedManagementIds: Set<Int> = emptySet(),
+	val loginOptions: SeerrLoginOptions? = null,
 ) {
 	val effectiveTags get() = tags ?: service?.server?.activeTags.orEmpty().toSet()
 	fun requestBody(): SeerrRequestBody? = runCatching {
@@ -80,12 +81,27 @@ class SeerrViewModel internal constructor(private val api: SeerrApi, private val
 				val checked = checkSavedSeerrSession(api)
 				_state.update { it.checkedSession(checked).copy(restoringSession = false) }
 				if (checked is SeerrSessionCheck.Connected) afterLogin()
+				else if (checked == SeerrSessionCheck.SignInRequired) loadLoginOptions()
 			}
 			finally { _state.update { it.copy(restoringSession = false) } }
 		}
 	}
 	fun retrySession() = start(_state.value.query, force = true)
-	fun showSignIn() { if (!_state.value.busy) _state.update { it.copy(user = null, sessionCheckFailed = false, message = null) } }
+	fun resumed() {
+		if (_state.value.busy || _state.value.submitting) return
+		api.invalidateNavigationCheck()
+		start(_state.value.query, force = true)
+	}
+	private suspend fun loadLoginOptions() {
+		_state.update { it.copy(loginOptions = null) }
+		val options = api.loginOptions()
+		_state.update { it.copy(loginOptions = options) }
+	}
+	fun retryLoginOptions() = perform { loadLoginOptions() }
+	fun showSignIn() = perform {
+		_state.update { it.copy(user = null, sessionCheckFailed = false, message = null) }
+		loadLoginOptions()
+	}
 	private suspend fun afterLogin() {
 		val type = initialType; val id = initialId
 		if (type != null && id != null) openTitleNow(SeerrTitle(id, type))
@@ -94,6 +110,11 @@ class SeerrViewModel internal constructor(private val api: SeerrApi, private val
 	}
 	fun login(email: String, password: String) = perform {
 		val user = api.login(email.trim(), password)
+		_state.update { it.copy(user = user) }
+		afterLogin()
+	}
+	fun loginJellyfin(username: String, password: String) = perform {
+		val user = api.loginJellyfin(username, password)
 		_state.update { it.copy(user = user) }
 		afterLogin()
 	}
@@ -123,6 +144,7 @@ class SeerrViewModel internal constructor(private val api: SeerrApi, private val
 		cancelMetadata()
 		api.disconnect()
 		_state.value = SeerrUiState(historyMode = true)
+		retryLoginOptions()
 	}
 	private fun cancelMetadata() { historyGeneration++; historyMetadata?.cancel(); historyMetadata = null }
 	fun browse(query: String, type: String, page: Int = 1) = perform { initialType = null; initialId = null; browseNow(query, type, page) }
