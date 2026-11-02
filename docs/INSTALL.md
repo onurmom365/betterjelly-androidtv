@@ -7,11 +7,11 @@ This is an independent fork. The TV app still displays **Jellyfin** and uses the
 1. Confirm the device runs Android-based Fire OS. Vega OS cannot run this APK.
 2. Install **Downloader by AFTVnews** from the device's app store.
 3. Allow Downloader to install apps when the device asks. Depending on Fire OS, this is under Settings → My Fire TV → Developer options → Install unknown apps. Menu names vary. If Developer options is hidden, open About and select the device name seven times.
-4. In Downloader, open this direct APK URL:
+4. In Downloader, enter code **8769319**, or open this direct APK URL:
 
    `https://github.com/onurmom365/betterjelly-androidtv/releases/latest/download/betterjelly-androidtv.apk`
 
-5. Choose Install, then open **Jellyfin**. No cable or GitHub account is needed. A Downloader numeric shortcut can also point to this same URL; only use a code shared by this repository's maintainer.
+5. Choose Install, then open **Jellyfin**. No cable or GitHub account is needed. Code **8769319** points to the stable latest APK URL, so it can be reused for future releases that keep the same asset name.
 
 For Shield/Android TV, use Downloader where available, transfer the APK through your preferred file-transfer app, or install with `adb install -r betterjelly-androidtv.apk` after verifying its identity.
 

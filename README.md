@@ -4,6 +4,8 @@ An independent Jellyfin Android TV fork with remote seeking improvements and nat
 
 **[Download the latest APK](https://github.com/onurmom365/betterjelly-androidtv/releases/latest/download/betterjelly-androidtv.apk)** | **[Installation guide](docs/INSTALL.md)** | **[Releases](https://github.com/onurmom365/betterjelly-androidtv/releases)**
 
+**Downloader code: `8769319`** — install Downloader by AFTVnews on Android-based Fire OS/Android TV, enter the code, then choose Install. The code targets the latest APK.
+
 ## Features
 
 - Left/Right immediately controls the progress bar with trickplay previews. Deliberate taps move five seconds; held buttons use configured seek steps. Playback resumes after seeking without pressing OK.
