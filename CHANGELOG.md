@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.2 — 2026-11-02
+
+- Added optional ASS/SSA direct playback with libass, preserving styled subtitles and embedded font attachments on compatible playback. Enable it in Settings → Playback → Advanced playback settings; it remains experimental and off by default. Transcoding fallbacks remain available.
+- Added Audio and Subtitles actions to movie, episode and series detail pages, including explicit Off and Default options. Series choices persist per device/account; a newer series-wide choice automatically supersedes older episode overrides. A later episode choice can create an individual exception.
+- Resolved manual track choices and explicit Subtitle Off now take precedence over unattributed automatic server track commands. Default still follows Jellyfin/Language Failover; identified remote-user control and in-player choices remain available.
+- Added an immediate local Resume point when returning to a movie/episode page, including early playback below the server's resume threshold. It lasts up to 30 minutes within the current app process; server resume settings and cross-device progress rules are unchanged.
+- Improved subtitle stream-index handling and startup track application. Shield checks confirm HEVC/Opus/ASS Direct Play, styled subtitles, named series/movie subtitles, server-default selection and early return Resume. Existing audio capabilities, Seerr integration, custom seek/OK behavior and daily updater remain intact.
+
+Fire hardware and wider HDR/Dolby Vision/passthrough regressions remain untested. This release retains the fork's application ID, signing identity and Jellyfin launcher/splash branding.
+
 ## 1.0.1 — 2026-11-01
 
 - Added Settings → About → Check for updates, release notes, download progress/cancellation and verified in-place system installation.

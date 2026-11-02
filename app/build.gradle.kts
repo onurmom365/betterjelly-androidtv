@@ -19,7 +19,7 @@ android {
 
 		// Release version
 		applicationId = forkApplicationId
-		versionName = project.getVersionName("1.0.1")
+		versionName = project.getVersionName("1.0.2")
 		versionCode = getVersionCode(versionName!!)
 	}
 

@@ -1,6 +1,6 @@
 # betterjelly-androidtv
 
-An independent Jellyfin Android TV fork with remote seeking improvements and native Seerr integration. The installed app is called **Jellyfin**, with the Jellyfin icon and splash screen. This project is not an official Jellyfin release.
+An independent Jellyfin Android TV fork with remote seeking improvements, optional styled ASS/SSA direct playback and native Seerr integration. The installed app is called **Jellyfin**, with the Jellyfin icon and splash screen. This project is not an official Jellyfin release.
 
 **[Download the latest APK](https://github.com/onurmom365/betterjelly-androidtv/releases/latest/download/betterjelly-androidtv.apk)** | **[Installation guide](docs/INSTALL.md)** | **[Releases](https://github.com/onurmom365/betterjelly-androidtv/releases)**
 
@@ -11,6 +11,9 @@ An independent Jellyfin Android TV fork with remote seeking improvements and nat
 - Left/Right immediately controls the progress bar with trickplay previews. Deliberate taps move five seconds; held buttons use configured seek steps. Playback resumes after seeking without pressing OK.
 - First OK reveals controls without pausing, focuses Play/Pause and fades after about three seconds without further input. A separate second OK activates Play/Pause.
 - Separate Resume and Play from beginning actions.
+- Audio/subtitle selection before playback on movie, episode and series pages, with persistent series choices, Off and server Default options. Explicit manual choices take precedence over automatic startup track commands.
+- Optional libass ASS/SSA direct playback for styled subtitles and embedded fonts. Enable it under Playback → Advanced playback settings. See [subtitle setup](docs/ASS_SUBTITLES.md) and [pre-play tracks](docs/PREPLAY_TRACKS.md).
+- Immediate return-to-details Resume for early playback, using a local 30-minute/current-process return point while normal server resume rules remain unchanged.
 - Smooth colored countdown before supported intro/credits/recap segments. Back during the countdown lets that segment play through for the current playback session.
 - Regular Search includes Seerr poster results above library results. Native title details, season selection, request review/history and permitted failed-request Retry/Delete controls.
 - Seerr quality profiles, root folders and existing tags, subject to the signed-in user's permissions. Configurable LAN/HTTPS address, separate encrypted sessions and foreground recovery.

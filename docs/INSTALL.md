@@ -23,6 +23,14 @@ For Seerr, open Search and a Seerr title, choose **Server**, and select the corr
 
 Search, Requests and request review can be checked without submitting media. Actual media requests, Retry and Delete change server state and should be used deliberately. Approval rules and quality/tag permissions remain controlled by Seerr. A request saved in Seerr does not guarantee successful downstream acquisition.
 
+## Audio and subtitles in 1.0.2
+
+Movie, episode and series pages have **Audio** and **Subtitles** actions, sometimes under **Other options**. Choose a named track, **Off**, or **Default — Jellyfin / Language Failover**. A new series-wide choice automatically supersedes older episode overrides; a later episode-specific choice can override the series again. Preferences stay on this device/account. See [pre-play track behavior](PREPLAY_TRACKS.md).
+
+For compatible styled anime subtitles, optionally enable **Settings → Playback → Advanced playback settings → Direct Play ASS/SSA subtitles (experimental)**. It is off by default. Exit and start the video again after changing it. Shield HEVC/Opus/ASS Direct Play and styled subtitles are user-verified; other devices/files may still need transcoding. See [ASS/SSA setup and fallback](ASS_SUBTITLES.md).
+
+Returning from early playback can now show Resume even before the server keeps a Continue Watching bookmark. This local return point lasts up to 30 minutes within the current app process; normal server resume rules remain unchanged after that window or an app-process restart.
+
 ## Update while preserving settings
 
 In 1.0.1 and later, open **Settings → About → Check for updates**. Review the version/notes, select **Download update**, then **Install update**. If asked, allow **Jellyfin** in **Install unknown apps**, return to the updater and select Install update again. Confirm the system install dialog. Cancelling the download/installer leaves the current app and settings in place.
