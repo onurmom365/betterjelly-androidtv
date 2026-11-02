@@ -4,6 +4,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.serialization.json.Json
 import org.jellyfin.androidtv.data.compat.VideoOptions
 import org.jellyfin.androidtv.data.compat.StreamInfo
 import org.jellyfin.androidtv.ui.playback.selection.PreplaySelectionStorage
@@ -155,6 +156,81 @@ class PreplayTrackSelectionTests : FunSpec({
 		}
 		account = "server1/user1"
 		choices.read(series, sub)?.mode shouldBe "off"
+	}
+	test("series Dialogue replaces an older episode Signs choice and automatically selects inheritance") {
+		val s = source("episode", stream(3, title = "S&S"), stream(4, title = "Dialogue"))
+		val episode = item(s)
+		val choices = PreplayTrackSelection(storage()) { "server/user" }
+		choices.save(episode.id, sub, PreplayTrackChoice.track(episode, s, s.mediaStreams!![0]))
+		choices.save(series, sub, PreplayTrackChoice.track(episode, s, s.mediaStreams!![1]))
+		choices.activeOverride(episode, sub) shouldBe null
+		val options = VideoOptions()
+		choices.apply(episode, options)
+		options.subtitleStreamIndex shouldBe 4
+		val next = item(source("next", stream(3, title = "S&S"), stream(9, title = "Dialogue")))
+		choices.apply(next, options)
+		options.subtitleStreamIndex shouldBe 9
+	}
+	test("a newer individual choice can override a series choice until the next series edit") {
+		val episode = item(source())
+		val choices = PreplayTrackSelection(storage()) { "server/user" }
+		choices.save(series, sub, PreplayTrackChoice())
+		choices.save(episode.id, sub, PreplayTrackChoice(mode = "off"))
+		choices.activeOverride(episode, sub)?.mode shouldBe "off"
+		choices.save(series, sub, PreplayTrackChoice())
+		choices.activeOverride(episode, sub) shouldBe null
+		choices.effective(episode, sub)?.mode shouldBe "default"
+	}
+	test("a new series subtitle choice does not reset an episode audio override") {
+		val episode = item(source())
+		val choices = PreplayTrackSelection(storage()) { "server/user" }
+		choices.save(series, audio, PreplayTrackChoice())
+		choices.save(episode.id, audio, PreplayTrackChoice(mode = "track"))
+		choices.save(episode.id, sub, PreplayTrackChoice(mode = "off"))
+		choices.save(series, sub, PreplayTrackChoice())
+		choices.activeOverride(episode, audio)?.mode shouldBe "track"
+		choices.activeOverride(episode, sub) shouldBe null
+	}
+	test("an obsolete episode override cannot pin the old media version after a series edit") {
+		val a = source("version-a", stream(5, title = "Dialogue"))
+		val b = source("version-b", stream(7, title = "S&S"))
+		val episode = item(a).copy(mediaSources = listOf(a, b))
+		val choices = PreplayTrackSelection(storage()) { "server/user" }
+		choices.save(episode.id, sub, PreplayTrackChoice.track(episode, b, b.mediaStreams!!.single()))
+		choices.save(series, sub, PreplayTrackChoice.track(episode, a, a.mediaStreams!!.single()))
+		choices.source(episode) shouldBe a
+		val options = VideoOptions()
+		choices.apply(episode, options)
+		options.mediaSourceId shouldBe "version-a"
+		options.subtitleStreamIndex shouldBe 5
+	}
+	test("legacy series choice wins an episode tie without requiring the user to reselect inheritance") {
+		val disk = storage()
+		val s = source("episode", stream(3, title = "S&S"), stream(4, title = "Dialogue"))
+		val episode = item(s)
+		disk.write("server/user/${episode.id}/$sub", Json.encodeToString(PreplayTrackChoice.track(episode, s, s.mediaStreams!![0])))
+		disk.write("server/user/$series/$sub", Json.encodeToString(PreplayTrackChoice.track(episode, s, s.mediaStreams!![1])))
+		val choices = PreplayTrackSelection(disk) { "server/user" }
+		choices.activeOverride(episode, sub) shouldBe null
+		val options = VideoOptions()
+		choices.apply(episode, options)
+		options.subtitleStreamIndex shouldBe 4
+	}
+	test("legacy individual choice remains active when no series choice exists") {
+		val disk = storage()
+		val episode = item(source())
+		disk.write("server/user/${episode.id}/$sub", Json.encodeToString(PreplayTrackChoice(mode = "off")))
+		PreplayTrackSelection(disk) { "server/user" }.activeOverride(episode, sub)?.mode shouldBe "off"
+	}
+	test("selection edit order survives recreating the store") {
+		val disk = storage()
+		val episode = item(source())
+		PreplayTrackSelection(disk) { "server/user" }.save(episode.id, sub, PreplayTrackChoice(mode = "off"))
+		val recreated = PreplayTrackSelection(disk) { "server/user" }
+		recreated.save(series, sub, PreplayTrackChoice())
+		recreated.activeOverride(episode, sub) shouldBe null
+		recreated.save(episode.id, sub, PreplayTrackChoice(mode = "off"))
+		PreplayTrackSelection(disk) { "server/user" }.activeOverride(episode, sub)?.mode shouldBe "off"
 	}
 	test("audio and subtitles and unrelated series remain isolated") {
 		val choices = PreplayTrackSelection(storage()) { "server/user" }

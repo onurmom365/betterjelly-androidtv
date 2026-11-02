@@ -6,9 +6,11 @@ Movie, episode and series detail pages have **Audio** and **Subtitles** actions,
 - **Off — no subtitles** explicitly disables subtitles, including forced tracks, for the selected scope.
 - A named track selects that specific audio/subtitle track before playback negotiation. The player can still use safe transcoding when necessary.
 - Movies and episodes remember choices for that title on this device/account. Episodes can choose **Use series selection** to remove their individual override, or choose Default to override a saved series preference with server defaults.
-- Series choices persist on this device/account and apply to subsequent episode launches and queued episodes. The picker lists tracks from the next-up episode, or the first available episode when there is no next-up item.
+- Series choices persist on this device/account and apply to subsequent episode launches and queued episodes. A new series choice automatically replaces older episode overrides for that track type: episode pickers show **Use series selection** without another step. A later episode-specific choice can override it again. Audio and subtitles remain independent. The picker lists tracks from the next-up episode, or the first available episode when there is no next-up item.
 
 Series preferences match the manually selected track's language, title, codec, channel count, forced and hearing-impaired flags in each episode. They never reuse a numeric stream index across episodes. Missing or ambiguous matches defer to the server; this deliberately avoids guessing between signs, dialogue and commentary. A changed release/track layout can require choosing again. In-player changes affect the current playback and do not rewrite a saved series choice.
+
+Older saved preferences did not record edit order. When both an old episode choice and an old series choice exist, the series choice takes precedence after this upgrade; a new episode selection restores an intentional individual override. Saved records are retained locally, and no server episode listing or preference changes are needed.
 
 Preferences are local to this fork, scoped by Jellyfin server/user IDs. No server settings, media metadata or Seerr records change. The standard internal player supports these controls; external applications and the experimental playback rewrite retain their existing behavior and the picker explains that limitation.
 

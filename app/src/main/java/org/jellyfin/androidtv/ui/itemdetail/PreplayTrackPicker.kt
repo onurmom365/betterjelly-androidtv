@@ -52,7 +52,7 @@ fun FullDetailsFragment.showPreplayTracks(audio: Boolean) {
 			if (!isResumed || mBaseItem.id != owner.id || selections.accountIdentity() != identity) return@launch
 			val source = item?.let(selections::source)
 			val streams = source?.mediaStreams.orEmpty().filter { it.type == type }
-			val current = selections.read(owner.id, type)
+			val current = if (series) selections.read(owner.id, type) else selections.activeOverride(owner, type)
 			val choices = mutableListOf<PreplayTrackChoice?>()
 			val labels = mutableListOf<String>()
 			// An episode can inherit the series choice OR explicitly return to server defaults.

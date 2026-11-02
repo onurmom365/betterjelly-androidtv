@@ -24,6 +24,7 @@ data class PreplayTrackChoice(
 	val forced: Boolean = false,
 	val hearingImpaired: Boolean = false,
 	val label: String? = null,
+	val revision: Long = 0,
 ) {
 	companion object {
 		fun track(item: BaseItemDto, source: MediaSourceInfo, stream: MediaStream) = PreplayTrackChoice(
@@ -74,18 +75,33 @@ class PreplayTrackSelection(
 		runCatching { json.decodeFromString<PreplayTrackChoice>(it) }.getOrNull()
 	}
 
+	@Synchronized
 	fun save(id: UUID, type: MediaStreamType, choice: PreplayTrackChoice?) {
 		require(type == MediaStreamType.AUDIO || type == MediaStreamType.SUBTITLE)
-		key(id, type)?.let { storage.write(it, choice?.let { json.encodeToString(it) }) }
+		val account = account() ?: return
+		val key = "$account/$id/$type"
+		if (choice == null) { storage.write(key, null); return }
+		val revisionKey = "$account/track-choice-revision"
+		val revision = (storage.read(revisionKey)?.toLongOrNull() ?: 0).coerceIn(0, Long.MAX_VALUE - 1) + 1
+		storage.write(revisionKey, revision.toString())
+		storage.write(key, json.encodeToString(choice.copy(revision = revision)))
 	}
 
-	fun effective(item: BaseItemDto, type: MediaStreamType): PreplayTrackChoice? = read(item.id, type)
+	/** A new series choice invalidates older per-episode overrides without enumerating server episodes. */
+	fun activeOverride(item: BaseItemDto, type: MediaStreamType): PreplayTrackChoice? {
+		val own = read(item.id, type) ?: return null
+		val series = item.seriesId?.let { read(it, type) } ?: return own
+		// Legacy records have no edit order (revision 0); the requested series-wide choice wins that tie.
+		return own.takeIf { it.revision > series.revision }
+	}
+
+	fun effective(item: BaseItemDto, type: MediaStreamType): PreplayTrackChoice? = activeOverride(item, type)
 		?: item.seriesId?.let { read(it, type) }
 
 	fun source(item: BaseItemDto): MediaSourceInfo? {
 		val sources = item.mediaSources.orEmpty()
 		for (type in listOf(MediaStreamType.AUDIO, MediaStreamType.SUBTITLE)) {
-			val choice = read(item.id, type)
+			val choice = activeOverride(item, type)
 			if (choice?.mode == "track" && choice.itemId == item.id.toString()) {
 				sources.firstOrNull { it.id == choice.sourceId }?.let { return it }
 			}
