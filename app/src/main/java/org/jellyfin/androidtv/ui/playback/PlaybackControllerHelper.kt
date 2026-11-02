@@ -115,11 +115,7 @@ fun PlaybackController.setSubtitleIndex(index: Int, force: Boolean = false) {
 					}
 				} else {
 					// The server does not send a reliable index in all cases, so calculate it manually
-					val localIndex = mediaSource.mediaStreams.orEmpty()
-						.filter { it.type == MediaStreamType.SUBTITLE }
-						.filter { it.deliveryMethod == SubtitleDeliveryMethod.EMBED || it.deliveryMethod == SubtitleDeliveryMethod.HLS }
-						.indexOf(stream)
-						.takeIf { it != -1 }
+					val localIndex = embeddedSubtitleGroupIndex(mediaSource.mediaStreams.orEmpty(), stream)
 
 					if (localIndex == null) {
 						Timber.w("Failed to find local subtitle index")

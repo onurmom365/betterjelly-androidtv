@@ -23,6 +23,12 @@ import androidx.media3.exoplayer.util.EventLogger
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.TsExtractor
 import androidx.media3.ui.SubtitleView
+import io.github.peerless2012.ass.media.AssHandler
+import io.github.peerless2012.ass.media.factory.AssRenderersFactory
+import io.github.peerless2012.ass.media.kt.withAssMkvSupport
+import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
+import io.github.peerless2012.ass.media.type.AssRenderType
+import io.github.peerless2012.ass.media.widget.AssSubtitleView
 import org.jellyfin.playback.core.backend.BasePlayerBackend
 import org.jellyfin.playback.core.mediastream.MediaStream
 import org.jellyfin.playback.core.mediastream.PlayableMediaStream
@@ -54,6 +60,7 @@ class ExoPlayerBackend(
 	private var currentStream: PlayableMediaStream? = null
 	private var subtitleView: SubtitleView? = null
 	private var audioPipeline = ExoPlayerAudioPipeline()
+	private val assHandler by lazy { AssHandler(AssRenderType.OVERLAY_OPEN_GL) }
 	private val exoPlayer by lazy {
 		val dataSourceFactory = DefaultDataSource.Factory(
 			context,
@@ -71,7 +78,12 @@ class ExoPlayerBackend(
 			setConstantBitrateSeekingAlwaysEnabled(true)
 		}
 
-		val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
+		val mediaSourceFactory = if (exoPlayerOptions.enableLibass) {
+			val parser = AssSubtitleParserFactory(assHandler)
+			DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory.withAssMkvSupport(parser, assHandler)).apply {
+				setSubtitleParserFactory(parser)
+			}
+		} else DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
 		val renderersFactory = DefaultRenderersFactory(context).apply {
 			setEnableDecoderFallback(true)
 			setExtensionRendererMode(
@@ -80,7 +92,7 @@ class ExoPlayerBackend(
 					false -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
 				}
 			)
-		}
+		}.let { if (exoPlayerOptions.enableLibass) AssRenderersFactory(assHandler, it) else it }
 
 		ExoPlayer.Builder(context)
 			.setRenderersFactory(renderersFactory)
@@ -102,6 +114,7 @@ class ExoPlayerBackend(
 			.build()
 			.also { player ->
 				player.addListener(PlayerListener())
+				if (exoPlayerOptions.enableLibass) assHandler.init(player)
 
 				if (exoPlayerOptions.enableDebugLogging) {
 					player.addAnalyticsListener(EventLogger())
@@ -164,7 +177,9 @@ class ExoPlayerBackend(
 	override fun setSubtitleView(surfaceView: PlayerSubtitleView?) {
 		if (surfaceView != null) {
 			if (subtitleView == null) {
-				subtitleView = SubtitleView(surfaceView.context)
+				subtitleView = SubtitleView(surfaceView.context).apply {
+					if (exoPlayerOptions.enableLibass) addView(AssSubtitleView(surfaceView.context, assHandler))
+				}
 			}
 
 			surfaceView.addView(subtitleView)

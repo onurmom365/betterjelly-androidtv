@@ -55,16 +55,18 @@ private fun UserPreferences.getMaxBitrate(): Int {
 	return (maxBitrate * 1_000_000).roundToInt()
 }
 
+@JvmOverloads
 fun createDeviceProfile(
 	context: Context,
 	userPreferences: UserPreferences,
 	serverVersion: ServerVersion,
+	assDirectPlay: Boolean = AssPlaybackSupport.enabled(userPreferences),
 ) = createDeviceProfile(
 	mediaTest = MediaCodecCapabilitiesTest(context),
 	maxBitrate = userPreferences.getMaxBitrate(),
 	isAC3Enabled = userPreferences[UserPreferences.ac3Enabled],
 	downMixAudio = userPreferences[UserPreferences.audioBehaviour] == AudioBehavior.DOWNMIX_TO_STEREO,
-	assDirectPlay = false,
+	assDirectPlay = assDirectPlay,
 	pgsDirectPlay = userPreferences[UserPreferences.pgsDirectPlay],
 	jellyfinTenEleven = serverVersion >= ServerVersion(10, 11, 0),
 )

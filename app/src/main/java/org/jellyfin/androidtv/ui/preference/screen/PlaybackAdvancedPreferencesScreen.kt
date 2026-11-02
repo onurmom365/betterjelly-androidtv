@@ -103,6 +103,12 @@ class PlaybackAdvancedPreferencesScreen : OptionsFragment() {
 			}
 
 			checkbox {
+				setTitle(R.string.preference_ass_direct_play)
+				setContent(R.string.preference_ass_direct_play_description)
+				bind(userPreferences, UserPreferences.assDirectPlay)
+			}
+
+			checkbox {
 				setTitle(R.string.pref_external_player)
 				bind(userPreferences, UserPreferences.useExternalPlayer)
 			}

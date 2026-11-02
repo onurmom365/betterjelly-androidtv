@@ -32,6 +32,7 @@ import org.jellyfin.androidtv.util.Utils;
 import org.jellyfin.androidtv.util.apiclient.ReportingHelper;
 import org.jellyfin.androidtv.util.apiclient.Response;
 import org.jellyfin.androidtv.util.profile.DeviceProfileKt;
+import org.jellyfin.androidtv.util.profile.AssPlaybackSupport;
 import org.jellyfin.androidtv.util.sdk.compat.JavaCompat;
 import org.jellyfin.sdk.api.client.ApiClient;
 import org.jellyfin.sdk.model.ServerVersion;
@@ -537,7 +538,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         DeviceProfile internalProfile = DeviceProfileKt.createDeviceProfile(
                 mFragment.getContext(),
                 userPreferences.getValue(),
-                get(ServerVersion.class)
+                get(ServerVersion.class),
+                AssPlaybackSupport.enabled(userPreferences.getValue()) && playbackRetries == 0
         );
         internalOptions.setProfile(internalProfile);
         return internalOptions;

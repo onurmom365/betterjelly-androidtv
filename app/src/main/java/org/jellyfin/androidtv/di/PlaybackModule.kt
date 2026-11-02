@@ -18,6 +18,7 @@ import org.jellyfin.androidtv.ui.playback.PlaybackLauncher
 import org.jellyfin.androidtv.ui.playback.VideoQueueManager
 import org.jellyfin.androidtv.ui.playback.rewrite.RewriteMediaManager
 import org.jellyfin.androidtv.util.profile.createDeviceProfile
+import org.jellyfin.androidtv.util.profile.AssPlaybackSupport
 import org.jellyfin.playback.core.playbackManager
 import org.jellyfin.playback.jellyfin.jellyfinPlugin
 import org.jellyfin.playback.media3.exoplayer.ExoPlayerOptions
@@ -71,6 +72,7 @@ fun Scope.createPlaybackManager() = playbackManager(androidContext()) {
 	val userPreferences = get<UserPreferences>()
 	val exoPlayerOptions = ExoPlayerOptions(
 		preferFfmpeg = userPreferences[UserPreferences.preferExoPlayerFfmpeg],
+		enableLibass = AssPlaybackSupport.enabled(userPreferences),
 		enableDebugLogging = userPreferences[UserPreferences.debuggingEnabled],
 		baseDataSourceFactory = get<HttpDataSource.Factory>(),
 	)
@@ -84,7 +86,8 @@ fun Scope.createPlaybackManager() = playbackManager(androidContext()) {
 	)
 	install(media3SessionPlugin(get(), mediaSessionOptions))
 
-	val deviceProfileBuilder = { createDeviceProfile(androidContext(), userPreferences, get()) }
+	// The experimental backend keeps one player instance: advertise exactly its configured renderer.
+	val deviceProfileBuilder = { createDeviceProfile(androidContext(), userPreferences, get(), exoPlayerOptions.enableLibass) }
 	install(jellyfinPlugin(get(), deviceProfileBuilder, ProcessLifecycleOwner.get().lifecycle))
 
 	// Options

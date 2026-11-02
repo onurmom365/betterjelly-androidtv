@@ -248,6 +248,9 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		 */
 		var trickPlayEnabled = booleanPreference("trick_play_enabled", false)
 
+		/** Optional on-device styled ASS/SSA renderer; false retains server subtitle burn-in. */
+		var assDirectPlay = booleanPreference("libass_enabled", false)
+
 		/**
   		 * Enable PGS subtitle direct-play.
 		 */

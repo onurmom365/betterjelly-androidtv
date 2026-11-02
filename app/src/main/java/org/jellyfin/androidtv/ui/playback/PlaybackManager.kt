@@ -121,6 +121,7 @@ class PlaybackManager(
 			}
 		}
 
+		PlaybackCapabilitiesDiagnostic.negotiation(options, response)
 		createStreamInfo(api, options, response)
 	}
 }
