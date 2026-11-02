@@ -6,6 +6,9 @@ plugins {
 	alias(libs.plugins.aboutlibraries)
 }
 
+// Retain the installed fork identity for in-place updates; never build the official package.
+val forkApplicationId = "org.jellyfin.androidtv.debug"
+
 android {
 	namespace = "org.jellyfin.androidtv"
 	compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -15,8 +18,8 @@ android {
 		targetSdk = libs.versions.android.targetSdk.get().toInt()
 
 		// Release version
-		applicationId = namespace
-		versionName = project.getVersionName()
+		applicationId = forkApplicationId
+		versionName = project.getVersionName("1.0.0")
 		versionCode = getVersionCode(versionName!!)
 	}
 
@@ -56,9 +59,9 @@ android {
 			isMinifyEnabled = false
 
 			// Set package names used in various XML files
-			resValue("string", "app_id", namespace!!)
-			resValue("string", "app_search_suggest_authority", "${namespace}.content")
-			resValue("string", "app_search_suggest_intent_data", "content://${namespace}.content/intent")
+			resValue("string", "app_id", forkApplicationId)
+			resValue("string", "app_search_suggest_authority", "${forkApplicationId}.content")
+			resValue("string", "app_search_suggest_intent_data", "content://${forkApplicationId}.content/intent")
 
 			// Set flavored application name
 			resValue("string", "app_name", "@string/app_name_release")
@@ -69,13 +72,10 @@ android {
 		}
 
 		debug {
-			// Use different application id to run release and debug at the same time
-			applicationIdSuffix = ".debug"
-
-			// Set package names used in various XML files
-			resValue("string", "app_id", namespace + applicationIdSuffix)
-			resValue("string", "app_search_suggest_authority", "${namespace + applicationIdSuffix}.content")
-			resValue("string", "app_search_suggest_intent_data", "content://${namespace + applicationIdSuffix}.content/intent")
+			// Both fork build types update the existing custom app, independently of official Jellyfin.
+			resValue("string", "app_id", forkApplicationId)
+			resValue("string", "app_search_suggest_authority", "${forkApplicationId}.content")
+			resValue("string", "app_search_suggest_intent_data", "content://${forkApplicationId}.content/intent")
 
 			// Set flavored application name
 			resValue("string", "app_name", "@string/app_name_debug")
@@ -96,7 +96,7 @@ android {
 	}
 }
 
-base.archivesName.set("jellyfin-androidtv-v${project.getVersionName()}")
+base.archivesName.set("betterjelly-androidtv-v${android.defaultConfig.versionName}")
 
 tasks.register("versionTxt") {
 	val path = layout.buildDirectory.asFile.get().resolve("version.txt")

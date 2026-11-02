@@ -7,3 +7,9 @@ local.properties
 .kotlin/
 build/
 captures/
+
+# Private signing material and local release output must never enter source control.
+*.keystore
+*.jks
+keystore.properties
+release-private/

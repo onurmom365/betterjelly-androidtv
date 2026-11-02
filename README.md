@@ -1,89 +1,31 @@
-<h1 align="center">Jellyfin Android TV</h1>
-<h3 align="center">Part of the <a href="https://jellyfin.org">Jellyfin Project</a></h3>
+# betterjelly-androidtv
 
----
+An independent Jellyfin Android TV fork with remote seeking improvements and native Seerr integration. The installed app is called **Jellyfin**, with the Jellyfin icon and splash screen. This project is not an official Jellyfin release.
 
-<p align="center">
-<img alt="Logo banner" src="https://raw.githubusercontent.com/jellyfin/jellyfin-ux/master/branding/SVG/banner-logo-solid.svg?sanitize=true"/>
-<br/><br/>
-<a href="https://github.com/jellyfin/jellyfin-androidtv">
-<img alt="GPL 2.0 License" src="https://img.shields.io/github/license/jellyfin/jellyfin-androidtv.svg"/>
-</a>
-<a href="https://github.com/jellyfin/jellyfin-androidtv/releases">
-<img alt="Current Release" src="https://img.shields.io/github/release/jellyfin/jellyfin-androidtv.svg"/>
-</a>
-<a href="https://translate.jellyfin.org/projects/jellyfin-android/jellyfin-androidtv/">
-<img alt="Translation Status" src="https://translate.jellyfin.org/widgets/jellyfin-android/-/jellyfin-androidtv/svg-badge.svg"/>
-</a>
-<br/>
-<a href="https://opencollective.com/jellyfin">
-<img alt="Donate" src="https://img.shields.io/opencollective/all/jellyfin.svg?label=backers"/>
-</a>
-<a href="https://features.jellyfin.org">
-<img alt="Feature Requests" src="https://img.shields.io/badge/fider-vote%20on%20features-success.svg"/>
-</a>
-<a href="https://matrix.to/#/+jellyfin:matrix.org">
-<img alt="Chat on Matrix" src="https://img.shields.io/matrix/jellyfin:matrix.org.svg?logo=matrix"/>
-</a>
-<a href="https://www.reddit.com/r/jellyfin">
-<img alt="Join our Subreddit" src="https://img.shields.io/badge/reddit-r%2Fjellyfin-%23FF5700.svg"/>
-</a>
-<br/>
-<a href="https://play.google.com/store/apps/details?id=org.jellyfin.androidtv">
-<img width="153" alt="Jellyfin on Google Play" src="https://jellyfin.org/images/store-icons/google-play.png"/>
-</a>
-<a href="https://www.amazon.com/gp/aw/d/B07TX7Z725">
-<img width="153" alt="Jellyfin on Amazon Appstore" src="https://jellyfin.org/images/store-icons/amazon.png"/>
-</a>
-<a href="https://f-droid.org/en/packages/org.jellyfin.androidtv/">
-<img width="153" alt="Jellyfin on F-Droid" src="https://jellyfin.org/images/store-icons/fdroid.png"/>
-</a>
-<br/>
-<a href="https://repo.jellyfin.org/releases/client/androidtv/">Download archive</a>
-</p>
+**[Download the latest APK](https://github.com/onurmom365/betterjelly-androidtv/releases/latest/download/betterjelly-androidtv.apk)** | **[Installation guide](docs/INSTALL.md)** | **[Releases](https://github.com/onurmom365/betterjelly-androidtv/releases)**
 
-Jellyfin Android TV is a Jellyfin client for Android TV, Nvidia Shield, and Amazon Fire TV devices.
-We welcome all contributions and pull requests! If you have a larger feature in mind please open an
-issue so we can discuss the implementation before you start. 
+## Features
 
-## Translating
+- Left/Right immediately controls the progress bar with trickplay previews. Deliberate taps move five seconds; held buttons use configured seek steps. Playback resumes after seeking without pressing OK.
+- First OK reveals controls without pausing, focuses Play/Pause and fades after about three seconds without further input. A separate second OK activates Play/Pause.
+- Separate Resume and Play from beginning actions.
+- Smooth colored countdown before supported intro/credits/recap segments. Back during the countdown lets that segment play through for the current playback session.
+- Regular Search includes Seerr poster results above library results. Native title details, season selection, request review/history and permitted failed-request Retry/Delete controls.
+- Seerr quality profiles, root folders and existing tags, subject to the signed-in user's permissions. Configurable LAN/HTTPS address, separate encrypted sessions and foreground recovery.
+- Jellyfin, Seerr account or Plex sign-in according to the chosen Seerr server's enabled methods.
 
-Translations can be improved very easily from our
-[Weblate](https://translate.jellyfin.org/projects/jellyfin-android/jellyfin-androidtv) instance.
-Look through the following graphic to see if your native language could use some work!
+Seerr requires a separately configured server. Intro segments and trickplay images require server-provided data. Jellyfin browsing and playback remain independent of Seerr availability.
 
-<a href="https://translate.jellyfin.org/engage/jellyfin-android/">
-<img alt="Detailed Translation Status" src="https://translate.jellyfin.org/widgets/jellyfin-android/-/jellyfin-androidtv/multi-auto.svg"/>
-</a>
+## Compatibility and updates
 
-## Build Process
+Tested on an NVIDIA Shield. The universal APK includes ARM 32-bit/64-bit and x86 variants. Android-based Fire OS devices are candidates; Fire Stick installation, remote behavior and codecs still need hardware testing. Vega OS devices cannot install Android APKs. Older Android versions may not support every integration feature; Seerr secure session storage requires Android 6 or later.
 
-### Dependencies
+The application ID is **`org.jellyfin.androidtv.debug`**, retained from the tested development builds to preserve their data. It is separate from official `org.jellyfin.androidtv`. Release APKs are not debuggable. If both are installed, both may be labelled Jellyfin; identify the fork in its version information or Android App info.
 
-- Android Studio
+Install a newer signed APK over the existing fork to retain settings. Do not uninstall first. Downloads are currently manual: an in-app updater is planned, not included in 1.0.0. Official store updates do not update this fork.
 
-### Build
+## Source and license
 
-1. Clone or download this repository
+Based on Jellyfin Android TV **v0.19.10**, upstream commit `984181a3d6ab14e9a6d2dcc850c582e1c138bd95`. Original copyright and license notices are retained. Distributed under GPL-2.0-or-later; see [LICENSE](LICENSE), [changes](CHANGELOG.md), [build instructions](docs/BUILD.md) and the [preserved upstream README](docs/UPSTREAM_README.md). Third-party dependency notices remain available in the app.
 
-   ```sh
-   git clone https://github.com/jellyfin/jellyfin-androidtv.git
-   cd jellyfin-androidtv
-   ```
-
-2. Open the project in Android Studio and run it from there or build an APK directly through Gradle:
-
-   ```sh
-   ./gradlew assembleDebug
-   ```
-   
-   Add the Android SDK to your PATH environment variable or create the ANDROID_SDK_ROOT variable for
-   this to work.
-
-### Deploy to device/emulator
-
-   ```sh
-   ./gradlew installDebug
-   ```
-
-*You can also replace the "Debug" with "Release" to get an optimized release binary.*
+Use this repository for fork-specific issues. Do not report fork-specific bugs as official Jellyfin bugs. Do not include passwords, tokens, API keys or private playback/network logs in reports.
