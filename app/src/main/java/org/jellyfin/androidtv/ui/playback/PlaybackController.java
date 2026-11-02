@@ -26,6 +26,7 @@ import org.jellyfin.androidtv.preference.constant.StillWatchingBehavior;
 import org.jellyfin.androidtv.preference.constant.ZoomMode;
 import org.jellyfin.androidtv.ui.InteractionTrackerViewModel;
 import org.jellyfin.androidtv.ui.livetv.TvManager;
+import org.jellyfin.androidtv.ui.playback.segment.SegmentSkipSession;
 import org.jellyfin.androidtv.util.TimeUtils;
 import org.jellyfin.androidtv.util.Utils;
 import org.jellyfin.androidtv.util.apiclient.ReportingHelper;
@@ -97,6 +98,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     private long mSeekPosition = -1;
     private boolean wasSeeking = false;
     private boolean finishedInitialSeek = false;
+    private final SegmentSkipSession segmentSkipSession = new SegmentSkipSession();
 
     private LocalDateTime mCurrentProgramEnd = null;
     private LocalDateTime mCurrentProgramStart = null;
@@ -204,6 +206,10 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     public boolean canSeek() {
         return !isLiveTv;
+    }
+
+    public SegmentSkipSession getSegmentSkipSession() {
+        return segmentSkipSession;
     }
 
     public boolean isLiveTv() {

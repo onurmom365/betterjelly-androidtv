@@ -62,6 +62,7 @@ import org.jellyfin.androidtv.ui.navigation.Destinations;
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository;
 import org.jellyfin.androidtv.ui.playback.overlay.LeanbackOverlayFragment;
 import org.jellyfin.androidtv.ui.playback.segment.SegmentCountdownCue;
+import org.jellyfin.androidtv.ui.playback.segment.SegmentCountdown;
 import org.jellyfin.androidtv.ui.presentation.CardPresenter;
 import org.jellyfin.androidtv.ui.presentation.ChannelCardPresenter;
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter;
@@ -141,6 +142,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
     private final PlaybackOverlayFragmentHelper helper = new PlaybackOverlayFragmentHelper(this);
     private final DpadSeekKeyHandler dpadSeekKeyHandler = new DpadSeekKeyHandler();
     private final CenterControlsKeyHandler centerControlsKeyHandler = new CenterControlsKeyHandler();
+    private final SegmentCountdownBackKeyHandler segmentCountdownBackKeyHandler = new SegmentCountdownBackKeyHandler();
     private boolean controlsPeek;
 
     @Override
@@ -402,6 +404,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
     private OnBackPressedCallback backPressedCallback = new OnBackPressedCallback(true) {
         @Override
         public void handleOnBackPressed() {
+            if (dismissVisibleSegmentCountdown()) return;
             if (mPopupPanelVisible) {
                 // back should just hide the popup panel
                 hidePopupPanel();
@@ -419,6 +422,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
 
     @Override
     public boolean onKey(View v, int keyCode, KeyEvent event) {
+        if (cancelSegmentCountdownOnBack(event)) return true;
         if (revealControlsOnCenter(event)) return true;
         if (event.isLongPress()) {
             if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
@@ -485,6 +489,26 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
         }
     }
 
+    private boolean dismissVisibleSegmentCountdown() {
+        if (binding == null) return false;
+        SegmentCountdown countdown = binding.skipOverlay.getActiveCountdown();
+        PlaybackController controller = playbackControllerContainer.getValue().getPlaybackController();
+        if (countdown == null || controller == null) return false;
+        controller.getSegmentSkipSession().dismiss(countdown.getCue());
+        binding.skipOverlay.setSegmentCountdowns(controller.getSegmentSkipSession().getCountdowns());
+        clearSkipOverlay();
+        if (leanbackOverlayFragment != null) leanbackOverlayFragment.setShouldShowOverlay(false);
+        return true;
+    }
+
+    private boolean cancelSegmentCountdownOnBack(KeyEvent event) {
+        boolean visible = binding != null && binding.skipOverlay.getActiveCountdown() != null;
+        SegmentCountdownBackKeyHandler.Result result = segmentCountdownBackKeyHandler.onKey(event.getKeyCode(),
+                event.getAction(), event.getRepeatCount(), event.getDownTime(), visible);
+        if (result == SegmentCountdownBackKeyHandler.Result.CANCEL) dismissVisibleSegmentCountdown();
+        return result != SegmentCountdownBackKeyHandler.Result.PASS;
+    }
+
     private boolean revealControlsOnCenter(KeyEvent event) {
         boolean allowReveal = binding != null && leanbackOverlayFragment != null
                 && leanbackOverlayFragment.getPlayerGlue() != null
@@ -512,6 +536,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
     private View.OnKeyListener keyListener = new View.OnKeyListener() {
         @Override
         public boolean onKey(View v, int keyCode, KeyEvent event) {
+            if (cancelSegmentCountdownOnBack(event)) return true;
             if (revealControlsOnCenter(event)) return true;
             PlaybackController controller = playbackControllerContainer.getValue().getPlaybackController();
             if (leanbackOverlayFragment != null && leanbackOverlayFragment.getPlayerGlue() != null
@@ -747,6 +772,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
         super.onPause();
         dpadSeekKeyHandler.reset();
         centerControlsKeyHandler.reset();
+        segmentCountdownBackKeyHandler.reset();
         controlsPeek = false;
         if (mItemsToPlay == null || mItemsToPlay.isEmpty()) return;
 

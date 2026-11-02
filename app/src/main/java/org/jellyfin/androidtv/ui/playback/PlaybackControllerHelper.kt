@@ -18,12 +18,12 @@ import org.jellyfin.androidtv.util.sdk.start
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
 import org.jellyfin.sdk.model.api.BaseItemDto
-import org.jellyfin.sdk.model.api.MediaSegmentDto
 import org.jellyfin.sdk.model.api.MediaStreamType
 import org.jellyfin.sdk.model.api.SubtitleDeliveryMethod
 import org.koin.android.ext.android.inject
 import timber.log.Timber
 import java.util.UUID
+import kotlin.time.Duration.Companion.milliseconds
 
 fun PlaybackController.getLiveTvChannel(
 	id: UUID,
@@ -163,6 +163,8 @@ fun PlaybackController.applyMediaSegments(
 	val playbackFragment = fragment ?: return
 	val videoManager = mVideoManager
 	val mediaSegmentRepository by playbackFragment.inject<MediaSegmentRepository>()
+	val segmentSession = segmentSkipSession
+	val generation = segmentSession.begin(item.id)
 
 	playbackFragment.clearSkipOverlay()
 	playbackFragment.setSegmentCountdowns(emptyList())
@@ -171,52 +173,42 @@ fun PlaybackController.applyMediaSegments(
 			mediaSegmentRepository.getSegmentsForItem(item)
 		}.getOrNull().orEmpty()
 		currentCoroutineContext().ensureActive()
-		if (fragment !== playbackFragment || mVideoManager !== videoManager || currentlyPlayingItem?.id != item.id) return@launch
-		val countdowns = mutableListOf<SegmentCountdownCue>()
-
-		for (mediaSegment in mediaSegments) {
+		if (fragment !== playbackFragment || mVideoManager !== videoManager || currentlyPlayingItem?.id != item.id
+			|| !segmentSession.isCurrent(generation)) return@launch
+		val countdowns = mediaSegments.map { mediaSegment ->
 			val action = mediaSegmentRepository.getMediaSegmentAction(mediaSegment)
-			countdowns += SegmentCountdownCue(
+			SegmentCountdownCue(
 				mediaSegment.start.inWholeMilliseconds, mediaSegment.end.inWholeMilliseconds, mediaSegment.type, action,
 			)
-
-			when (action) {
-				MediaSegmentAction.SKIP -> addSkipAction(mediaSegment)
-				MediaSegmentAction.ASK_TO_SKIP -> addAskToSkipAction(mediaSegment)
-				MediaSegmentAction.NOTHING -> Unit
-			}
 		}
+		segmentSession.setCues(generation, countdowns)
+		countdowns.filter { it.action != MediaSegmentAction.NOTHING }.forEach { addSegmentAction(it, generation) }
 
-		playbackFragment.setSegmentCountdowns(countdowns)
+		playbackFragment.setSegmentCountdowns(segmentSession.countdowns)
 		callback()
 	}
 }
 
 @OptIn(UnstableApi::class)
-private fun PlaybackController.addSkipAction(mediaSegment: MediaSegmentDto) {
-	mVideoManager.mExoPlayer
+private fun PlaybackController.addSegmentAction(cue: SegmentCountdownCue, generation: Long) {
+	val playbackFragment = fragment ?: return
+	val videoManager = mVideoManager
+	val itemId = currentlyPlayingItem?.id ?: return
+	videoManager.mExoPlayer
 		.createMessage { _, _ ->
-			// We can't seek directly on the ExoPlayer instance as not all media is seekable
-			// the seek function in the PlaybackController checks this and optionally starts a transcode
-			// at the requested position
-			fragment.lifecycleScope.launch(Dispatchers.Main) {
-				seek(mediaSegment.end.inWholeMilliseconds, true)
+			playbackFragment.lifecycleScope.launch(Dispatchers.Main) {
+				if (fragment !== playbackFragment || mVideoManager !== videoManager || currentlyPlayingItem?.id != itemId
+					|| !segmentSkipSession.shouldAct(generation, cue)) return@launch
+				when (cue.action) {
+					// Use the controller so non-seekable streams retain their stream-rebuild path.
+					MediaSegmentAction.SKIP -> seek(cue.endMs, true)
+					MediaSegmentAction.ASK_TO_SKIP -> playbackFragment.askToSkip(cue.endMs.milliseconds)
+					MediaSegmentAction.NOTHING -> Unit
+				}
 			}
 		}
 		// Segments at position 0 will never be hit by ExoPlayer so we need to add a minimum value
-		.setPosition(mediaSegment.start.inWholeMilliseconds.coerceAtLeast(1))
-		.setDeleteAfterDelivery(false)
-		.send()
-}
-
-@OptIn(UnstableApi::class)
-private fun PlaybackController.addAskToSkipAction(mediaSegment: MediaSegmentDto) {
-	mVideoManager.mExoPlayer
-		.createMessage { _, _ ->
-			fragment?.askToSkip(mediaSegment.end)
-		}
-		// Segments at position 0 will never be hit by ExoPlayer so we need to add a minimum value
-		.setPosition(mediaSegment.start.inWholeMilliseconds.coerceAtLeast(1))
+		.setPosition(cue.startMs.coerceAtLeast(1))
 		.setDeleteAfterDelivery(false)
 		.send()
 }

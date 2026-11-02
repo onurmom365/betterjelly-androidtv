@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -113,7 +114,8 @@ private fun SegmentCountdownCard(countdown: SegmentCountdown, positionProvider: 
 		if (countdown.cue.action == MediaSegmentAction.SKIP) R.string.segment_countdown_auto else R.string.segment_countdown_ask,
 		segmentName,
 	)
-	val description = stringResource(R.string.segment_countdown_accessibility, label, countdown.secondsRemaining)
+	val cancelHint = stringResource(R.string.segment_countdown_cancel)
+	val description = stringResource(R.string.segment_countdown_accessibility, label, countdown.secondsRemaining) + ". " + cancelHint
 	val color = colorResource(R.color.button_default_normal_text)
 	val blue = colorResource(R.color.jellyfin_blue)
 	val purple = colorResource(R.color.jellyfin_purple)
@@ -143,7 +145,10 @@ private fun SegmentCountdownCard(countdown: SegmentCountdown, positionProvider: 
 			}
 			Text(text = countdown.secondsRemaining.toString(), color = blue, fontSize = 18.sp)
 		}
-		Text(text = label, color = color, fontSize = 18.sp)
+		Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+			Text(text = label, color = color, fontSize = 18.sp)
+			Text(text = cancelHint, color = color.copy(alpha = 0.8f), fontSize = 13.sp)
+		}
 	}
 }
 
@@ -208,6 +213,9 @@ class SkipOverlayView @JvmOverloads constructor(
 
 			return enabled && targetPosition != null && currentPosition <= (targetPosition - MediaSegmentRepository.SkipMinDuration)
 		}
+
+	val activeCountdown: SegmentCountdown?
+		get() = if (_skipUiEnabled.value && !visible) findSegmentCountdown(_segmentCountdowns.value, currentPositionMs) else null
 
 	@Composable
 	override fun Content() {

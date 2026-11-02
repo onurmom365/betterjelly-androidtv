@@ -540,6 +540,7 @@
     <string name="segment_countdown_auto">Skipping %1$s</string>
     <string name="segment_countdown_ask">%1$s coming up</string>
     <string name="segment_countdown_accessibility">%1$s in %2$d seconds</string>
+    <string name="segment_countdown_cancel">Back: Keep watching</string>
     <string name="skip_forward_length">Skip forward length</string>
     <string name="preference_enable_trickplay">Enable trickplay in video player</string>
     <string name="pref_subtitles_background_opacity">Subtitle background opacity</string>
