@@ -38,6 +38,10 @@ import org.jellyfin.androidtv.ui.base.button.Button
 import org.jellyfin.androidtv.ui.base.button.ButtonDefaults
 import java.util.UUID
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val Ink = Color(0xFF090F1C)
 private val Panel = Color(0xFF162136)
@@ -68,7 +72,8 @@ private fun Badge(label: String) {
 }
 
 @Composable
-fun SeerrScreen(s: SeerrUiState, model: SeerrViewModel, onBack: () -> Unit, onSearch: () -> Unit, onLibraryItem: (UUID) -> Unit) {
+fun SeerrScreen(s: SeerrUiState, model: SeerrViewModel, onBack: () -> Unit, onSearch: () -> Unit, onLibraryItem: (UUID) -> Unit,
+	serverOrigin: String, onServer: () -> Unit) {
 	val first = remember { FocusRequester() }
 	LaunchedEffect(s.user?.id, s.title?.id, s.restoringSession) {
 		if (!s.restoringSession && s.title == null) first.requestFocus()
@@ -77,9 +82,13 @@ fun SeerrScreen(s: SeerrUiState, model: SeerrViewModel, onBack: () -> Unit, onSe
 		Row(Modifier.fillMaxWidth().padding(horizontal = 36.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.spacedBy(12.dp)) {
 			Action("‹ Back", enabled = !s.submitting, modifier = Modifier.focusRequester(first), onClick = onBack)
-			Text("Seerr", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+			Column(Modifier.widthIn(max = 240.dp)) {
+				Text("Seerr", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+				Text(serverOrigin, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+			}
 			Spacer(Modifier.weight(1f))
 			Action("Search", enabled = !s.submitting, onClick = onSearch)
+			Action("Server", enabled = !s.submitting, onClick = onServer)
 			if (s.user != null) {
 				Action("Requests", !s.busy, selected = s.historyMode && s.title == null) { model.history() }
 				Action("Disconnect", !s.busy) { model.disconnect() }
@@ -110,14 +119,74 @@ fun SeerrScreen(s: SeerrUiState, model: SeerrViewModel, onBack: () -> Unit, onSe
 }
 
 @Composable
+internal fun SeerrServerDialog(endpoint: SeerrEndpoint, settings: SeerrEndpointConfiguration, account: String,
+	onBeforeSave: () -> Unit, onDismiss: () -> Unit) {
+	var address by remember(account, endpoint.origin) { mutableStateOf(endpoint.origin) }
+	var checking by remember { mutableStateOf(false) }
+	var saving by remember { mutableStateOf(false) }
+	var message by remember { mutableStateOf<String?>(null) }
+	val work = rememberCoroutineScope()
+	val first = remember { FocusRequester() }
+	val validation = runCatching { SeerrEndpoint.parse(address) }
+	val parsed = validation.getOrNull()
+	val busy = checking || saving
+	LaunchedEffect(Unit) { first.requestFocus() }
+	Dialog(onDismissRequest = { if (!saving) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+		Column(Modifier.width(700.dp).clip(Shape).background(Ink).border(1.dp, Line, Shape).padding(28.dp),
+			verticalArrangement = Arrangement.spacedBy(16.dp)) {
+			Text("Seerr server", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+			Text("Choose the address this Jellyfin account uses on this device. Each address keeps its own Seerr sign-in.", color = Muted, fontSize = 16.sp)
+			Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+				Action("Remote HTTPS", !busy, modifier = Modifier.focusRequester(first)) { address = SEERR_REMOTE_ORIGIN; message = null }
+				Action("Home LAN", !busy) { address = SEERR_ORIGIN; message = null }
+			}
+			Text("Server address", color = Muted)
+			BasicTextField(address, { address = it; message = null }, enabled = !busy, singleLine = true,
+				modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(9.dp)).border(1.dp, Line, RoundedCornerShape(9.dp)).padding(14.dp),
+				textStyle = JellyfinTheme.typography.default.copy(color = Color.White, fontSize = 17.sp),
+				keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false))
+			if (parsed == null) Text(validation.exceptionOrNull()?.message ?: "Enter a Seerr address.", color = Accent, fontSize = 14.sp)
+			message?.let { Text(it, color = Accent, fontSize = 15.sp) }
+			if (checking) Text("Checking connection…", color = Muted)
+			if (saving) Text("Saving address…", color = Muted)
+			Text("Test connection checks public availability. Saving does not sign in or submit a request.", color = Muted, fontSize = 13.sp)
+			Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+				Action("Cancel", !saving, onClick = onDismiss)
+				Action("Test connection", !busy && parsed != null) {
+					val selected = parsed ?: return@Action
+					checking = true; message = null
+					work.launch {
+						try { checkSeerrEndpoint(selected); message = "Seerr is reachable. Save this address to use it." }
+						catch (error: CancellationException) { throw error }
+						catch (error: Exception) { message = (error as? SeerrEndpointCheckFailure)?.userMessage ?: "Connection check failed. Please retry." }
+						finally { checking = false }
+					}
+				}
+				Action("Save address", !busy && parsed != null, primary = true) {
+					val selected = parsed ?: return@Action
+					if (selected == endpoint) { onDismiss(); return@Action }
+					saving = true; message = null
+					work.launch {
+						try { onBeforeSave(); withContext(Dispatchers.IO) { settings.save(account, selected.origin) }; onDismiss() }
+						catch (error: CancellationException) { throw error }
+						catch (_: Exception) { message = "The Seerr address could not be saved. Please retry." }
+						finally { saving = false }
+					}
+				}
+			}
+		}
+	}
+}
+
+@Composable
 private fun Message(message: String) = Text(message, color = Muted, fontSize = 15.sp,
 	modifier = Modifier.padding(horizontal = 36.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(9.dp))
 		.background(Panel).padding(14.dp))
 
 @Composable
 private fun SignIn(s: SeerrUiState, model: SeerrViewModel) {
-	var email by remember { mutableStateOf("") }
-	var password by remember { mutableStateOf("") }
+	var email by remember(model) { mutableStateOf("") }
+	var password by remember(model) { mutableStateOf("") }
 	LazyColumn(Modifier.widthIn(max = 600.dp).padding(horizontal = 40.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
 		item { Text("Your next movie starts here.", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold) }
 		item { Text("Connect Seerr to discover titles and manage requests alongside your Jellyfin library.", color = Muted, fontSize = 17.sp) }

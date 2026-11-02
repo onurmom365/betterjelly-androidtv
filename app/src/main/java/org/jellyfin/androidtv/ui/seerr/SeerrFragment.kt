@@ -10,6 +10,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
 import androidx.lifecycle.ViewModel
@@ -26,15 +28,21 @@ class SeerrFragment : Fragment() {
 	private val sessions by inject<SessionRepository>()
 	private val libraryApi by inject<ApiClient>()
 	private val navigation by inject<NavigationRepository>()
+	private val scopedModels by lazy { ViewModelProvider(this)[SeerrScopedModels::class.java] }
 
 	override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?) = content {
 		JellyfinTheme {
 			val session by sessions.currentSession.collectAsState()
-			val scope = seerrAccountScope(session)
+			val settings = remember { seerrEndpoints(requireContext()) }
+			val revision by settings.revision.collectAsState()
+			val identity = seerrAccountIdentity(session)
+			val endpoint = remember(identity, revision) { settings.endpoint(identity) }
+			val scope = seerrAccountScope(session, endpoint)
 			if (scope == null) { Text("Sign in to your Jellyfin library first."); return@JellyfinTheme }
-			val model = remember(scope) {
-				val api = seerrApiForAccount(requireContext(), sessions, scope)
-				ViewModelProvider(this, object : ViewModelProvider.Factory {
+			var serverOpen by remember { mutableStateOf(false) }
+			val model = remember(scope, revision) {
+				val api = seerrApiForAccount(requireContext(), sessions, scope, endpoint)
+				scopedModels.provider("$scope/$revision", object : ViewModelProvider.Factory {
 					@Suppress("UNCHECKED_CAST")
 					override fun <T : ViewModel> create(modelClass: Class<T>): T = SeerrViewModel(api, JellyfinSeerrLibrary(libraryApi)) as T
 				})["seerr-$scope", SeerrViewModel::class.java]
@@ -63,7 +71,10 @@ class SeerrFragment : Fragment() {
 			BackHandler { back() }
 			SeerrScreen(state, model, back,
 				onSearch = { model.leave(); navigation.navigate(Destinations.search(state.query)) },
-				onLibraryItem = { navigation.navigate(Destinations.itemDetails(it)) })
+				onLibraryItem = { navigation.navigate(Destinations.itemDetails(it)) },
+				serverOrigin = endpoint.origin, onServer = { if (!state.submitting) serverOpen = true })
+			if (serverOpen && identity != null) SeerrServerDialog(endpoint, settings, identity,
+				onBeforeSave = { model.leave() }, onDismiss = { serverOpen = false })
 		}
 	}
 }

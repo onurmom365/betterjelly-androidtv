@@ -40,6 +40,9 @@ import org.jellyfin.androidtv.ui.seerr.SeerrSearchViewModel
 import org.jellyfin.androidtv.ui.seerr.SeerrSearchState
 import org.jellyfin.androidtv.ui.seerr.seerrAccountScope
 import org.jellyfin.androidtv.ui.seerr.seerrApiForAccount
+import org.jellyfin.androidtv.ui.seerr.seerrAccountIdentity
+import org.jellyfin.androidtv.ui.seerr.seerrEndpoints
+import org.jellyfin.androidtv.ui.seerr.SeerrScopedModels
 import androidx.leanback.app.RowsSupportFragment
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.Text
@@ -56,6 +59,7 @@ import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
 
 class SearchFragment : Fragment() {
+	private val seerrModels by lazy { ViewModelProvider(this)[SeerrScopedModels::class.java] }
 	companion object {
 		const val EXTRA_QUERY = "query"
 	}
@@ -75,11 +79,15 @@ class SearchFragment : Fragment() {
 			val speechRecognizerAvailability = rememberSpeechRecognizerAvailability()
 			val sessions = koinInject<SessionRepository>()
 			val session by sessions.currentSession.collectAsState()
-			val scope = seerrAccountScope(session)
-			val seerrModel = remember(scope) {
+			val seerrSettings = remember { seerrEndpoints(requireContext()) }
+			val revision by seerrSettings.revision.collectAsState()
+			val identity = seerrAccountIdentity(session)
+			val endpoint = remember(identity, revision) { seerrSettings.endpoint(identity) }
+			val scope = seerrAccountScope(session, endpoint)
+			val seerrModel = remember(scope, revision) {
 				scope?.let {
-					val api = seerrApiForAccount(requireContext(), sessions, it)
-					ViewModelProvider(this, object : ViewModelProvider.Factory {
+						val api = seerrApiForAccount(requireContext(), sessions, it, endpoint)
+						seerrModels.provider("$it/$revision", object : ViewModelProvider.Factory {
 						@Suppress("UNCHECKED_CAST")
 						override fun <T : ViewModel> create(modelClass: Class<T>): T = SeerrSearchViewModel(api) as T
 					})["search-seerr-$it", SeerrSearchViewModel::class.java]
@@ -100,7 +108,7 @@ class SearchFragment : Fragment() {
 					if (event == Lifecycle.Event.ON_RESUME) seerrModel?.refresh(latestQuery)
 				}
 				owner.lifecycle.addObserver(observer)
-				onDispose { owner.lifecycle.removeObserver(observer) }
+				onDispose { owner.lifecycle.removeObserver(observer); seerrModel?.leave() }
 			}
 
 			LaunchedEffect(Unit) {

@@ -31,6 +31,7 @@ class SeerrSearchViewModel(private val api: SeerrApi) : ViewModel() {
 	private var querying = false
 
 	fun refresh(query: String) { checked = false; search(query, immediate = true) }
+	fun leave() { job?.cancel(); activeQuery = null; querying = false; _state.update { it.copy(loading = false) } }
 	fun search(query: String, immediate: Boolean = false) {
 		val normalized = query.trim()
 		if (activeQuery == normalized && job?.isActive == true && (!immediate || querying)) return

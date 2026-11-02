@@ -5,7 +5,9 @@ import org.jellyfin.androidtv.auth.repository.Session
 import org.jellyfin.androidtv.auth.repository.SessionRepository
 import java.lang.ref.WeakReference
 
-fun seerrAccountScope(session: Session?) = session?.let { "${it.serverId}/${it.userId}/$SEERR_ORIGIN" }
+fun seerrAccountIdentity(session: Session?) = session?.let { "${it.serverId}/${it.userId}" }
+fun seerrAccountScope(session: Session?, endpoint: SeerrEndpoint = defaultSeerrEndpoint) =
+	seerrAccountIdentity(session)?.let { "$it/${endpoint.origin}" }
 
 private object SeerrAccountApi {
 	private var currentScope: String? = null
@@ -16,9 +18,14 @@ private object SeerrAccountApi {
 	}
 }
 
-fun seerrApiForAccount(context: Context, sessions: SessionRepository, scope: String) = SeerrAccountApi.get(scope) {
-	SeerrApi(AndroidSeerrSessionStore(context.applicationContext, scope),
-		accessAllowed = { seerrAccountScope(sessions.currentSession.value) == scope })
+fun seerrApiForAccount(context: Context, sessions: SessionRepository, scope: String, endpoint: SeerrEndpoint = defaultSeerrEndpoint) = SeerrAccountApi.get(scope) {
+	val appContext = context.applicationContext
+	SeerrApi(AndroidSeerrSessionStore(appContext, scope),
+		accessAllowed = {
+			val session = sessions.currentSession.value
+			val current = seerrEndpoints(appContext).endpoint(seerrAccountIdentity(session))
+			seerrAccountScope(session, current) == scope
+		}, endpoint = endpoint)
 }
 
 fun tmdbImage(path: String?, size: String = "w500"): String? = path?.takeIf {

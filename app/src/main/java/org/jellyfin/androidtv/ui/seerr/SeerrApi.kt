@@ -19,7 +19,6 @@ import okhttp3.Callback
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -78,8 +77,9 @@ class SeerrApi internal constructor(
 	store: SeerrSessionStore,
 	private val accessAllowed: () -> Boolean = { true },
 	private val callFactory: Call.Factory? = null,
+	private val endpoint: SeerrEndpoint = defaultSeerrEndpoint,
 ) {
-	private val origin = SEERR_ORIGIN.toHttpUrl()
+	private val origin = endpoint.url
 	private val jar = SeerrCookieJar(origin, store)
 	// Dedicated transport: GET connection recovery, single-attempt mutations, no Jellyfin headers/logging.
 	private val transport = SeerrTransport(jar)
