@@ -107,7 +107,8 @@ class SeerrEfficiencyTests : FunSpec({
 	}
 	test("history is interactive before slow title metadata finishes and opening a confirmation makes no mutation") {
 		val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
-		val metadataCancelled = AtomicBoolean(false)
+		val metadataStarted = CompletableDeferred<Unit>()
+		val metadataCancelled = CompletableDeferred<Unit>()
 		var mutations = 0
 		val immediate = seerrFakeCalls { request ->
 			if (request.method != "GET") mutations++
@@ -116,8 +117,8 @@ class SeerrEfficiencyTests : FunSpec({
 		}
 		val factory = Call.Factory { request ->
 			if (request.url.encodedPath.endsWith("/tv/10")) mockk<Call> {
-				every { enqueue(any()) } answers { /* Keep metadata pending. */ }
-				every { cancel() } answers { metadataCancelled.set(true); Unit }
+				every { enqueue(any()) } answers { metadataStarted.complete(Unit); Unit /* Keep metadata pending. */ }
+				every { cancel() } answers { metadataCancelled.complete(Unit); Unit }
 			} else immediate.newCall(request)
 		}
 		val model = SeerrViewModel(SeerrApi(sessionStore(), callFactory = factory), SeerrLibrary { Result.success(emptyList()) }, scope)
@@ -125,12 +126,13 @@ class SeerrEfficiencyTests : FunSpec({
 			model.start("", history = true)
 			val state = withTimeout(5_000) { model.state.first { !it.busy && it.history.size == 1 } }
 			state.history.single().title shouldBe null
+			withTimeout(5_000) { metadataStarted.await() }
 			model.askRequestAction(SeerrRequestAction.RETRY, state.history.single().request, "Test series")
 			model.state.value.requestPrompt?.action shouldBe SeerrRequestAction.RETRY
 			mutations shouldBe 0
 			model.dismissRequestAction()
 			model.leave()
-			metadataCancelled.get() shouldBe true
+			withTimeout(5_000) { metadataCancelled.await() }
 		} finally { scope.cancel() }
 	}
 	test("title artwork and metadata publish before a slow library check while requesting stays gated") {
