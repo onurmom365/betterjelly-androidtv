@@ -99,6 +99,7 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
     private View secondarySeekControls;
     private boolean dpadSeekActive;
     private DpadSeekNavigator dpadSeekNavigator;
+    private boolean focusPlayPauseOnBind;
 
     CustomPlaybackTransportControlGlue(Context context, VideoPlayerAdapter playerAdapter, PlaybackController playbackController) {
         super(context, playerAdapter);
@@ -197,6 +198,7 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
                 primarySeekControls = primaryDock == null ? null : primaryDock.getChildAt(0);
                 secondarySeekControls = secondaryDock == null ? null : secondaryDock.getChildAt(0);
                 vh.setOnKeyListener(CustomPlaybackTransportControlGlue.this);
+                if (focusPlayPauseOnBind) focusPlayPauseAction();
             }
 
             @Override
@@ -402,6 +404,15 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
 
     public boolean isProgressBarFocused() {
         return progressBar != null && progressBar.hasFocus();
+    }
+
+    public void focusPlayPauseAction() {
+        focusPlayPauseOnBind = true;
+        if (primarySeekControls == null || primaryActionsAdapter == null) return;
+        ViewGroup bar = primarySeekControls.findViewById(androidx.leanback.R.id.control_bar);
+        int index = primaryActionsAdapter.indexOf(playPauseAction);
+        View button = bar == null || index < 0 ? null : bar.getChildAt(index);
+        if (button != null && button.requestFocus()) focusPlayPauseOnBind = false;
     }
 
     private void keepDpadSeekControlsVisible() {

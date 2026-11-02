@@ -140,6 +140,8 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
 
     private final PlaybackOverlayFragmentHelper helper = new PlaybackOverlayFragmentHelper(this);
     private final DpadSeekKeyHandler dpadSeekKeyHandler = new DpadSeekKeyHandler();
+    private final CenterControlsKeyHandler centerControlsKeyHandler = new CenterControlsKeyHandler();
+    private boolean controlsPeek;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -207,6 +209,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
         tvGuideBinding.getRoot().setVisibility(View.GONE);
 
         binding.getRoot().setOnTouchListener((v, event) -> {
+            controlsPeek = false;
             //and then manage our fade timer
             if (mFadeEnabled) startFadeTimer();
 
@@ -416,6 +419,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
 
     @Override
     public boolean onKey(View v, int keyCode, KeyEvent event) {
+        if (revealControlsOnCenter(event)) return true;
         if (event.isLongPress()) {
             if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
                 if (mSelectedProgramView instanceof ProgramGridCell)
@@ -481,9 +485,34 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
         }
     }
 
+    private boolean revealControlsOnCenter(KeyEvent event) {
+        boolean allowReveal = binding != null && leanbackOverlayFragment != null
+                && leanbackOverlayFragment.getPlayerGlue() != null
+                && playbackControllerContainer.getValue().getPlaybackController() != null
+                && !mIsVisible && !leanbackOverlayFragment.isControlsOverlayVisible()
+                && !mGuideVisible && !mPopupPanelVisible && !binding.skipOverlay.getVisible();
+        CenterControlsKeyHandler.Result result = centerControlsKeyHandler.onKey(event.getKeyCode(),
+                event.getAction(), event.getRepeatCount(), event.getDownTime(), allowReveal);
+        if (result == CenterControlsKeyHandler.Result.PASS) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) controlsPeek = false;
+            return false;
+        }
+        if (result == CenterControlsKeyHandler.Result.REVEAL) {
+            controlsPeek = true;
+            leanbackOverlayFragment.setShouldShowOverlay(true);
+            leanbackOverlayFragment.showControlsOverlay(false);
+            leanbackOverlayFragment.getPlayerGlue().focusPlayPauseAction();
+            // Keep this peek visible until its timer; playback callbacks must not reopen it.
+            leanbackOverlayFragment.setShouldShowOverlay(false);
+        }
+        if (mIsVisible) startFadeTimer();
+        return true;
+    }
+
     private View.OnKeyListener keyListener = new View.OnKeyListener() {
         @Override
         public boolean onKey(View v, int keyCode, KeyEvent event) {
+            if (revealControlsOnCenter(event)) return true;
             PlaybackController controller = playbackControllerContainer.getValue().getPlaybackController();
             if (leanbackOverlayFragment != null && leanbackOverlayFragment.getPlayerGlue() != null
                     && leanbackOverlayFragment.getPlayerGlue().finishDpadSeekOnKey(event)) {
@@ -636,13 +665,6 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
                             }
                         }
 
-                        if ((keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)
-                                && playbackControllerContainer.getValue().getPlaybackController().canSeek()) {
-                            // if the player is playing and the overlay is hidden, this will pause
-                            // if the player is paused and then 'back' is pressed to hide the overlay, this will play
-                            playbackControllerContainer.getValue().getPlaybackController().playPause();
-                            return true;
-                        }
                     }
 
                     //and then manage our fade timer
@@ -689,7 +711,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
     private void startFadeTimer() {
         mFadeEnabled = true;
         mHandler.removeCallbacks(mHideTask);
-        mHandler.postDelayed(mHideTask, 6000);
+        mHandler.postDelayed(mHideTask, controlsPeek ? CenterControlsKeyHandler.IDLE_TIMEOUT_MS : 6000);
         WindowCompat.setDecorFitsSystemWindows(requireActivity().getWindow(), false);
         WindowCompat.getInsetsController(requireActivity().getWindow(), requireActivity().getWindow().getDecorView()).hide(WindowInsetsCompat.Type.systemBars());
     }
@@ -724,6 +746,8 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
     public void onPause() {
         super.onPause();
         dpadSeekKeyHandler.reset();
+        centerControlsKeyHandler.reset();
+        controlsPeek = false;
         if (mItemsToPlay == null || mItemsToPlay.isEmpty()) return;
 
         setPlayPauseActionState(0);
@@ -764,6 +788,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
         if (!mIsVisible) return;
 
         mIsVisible = false;
+        controlsPeek = false;
         binding.topPanel.startAnimation(fadeOut);
         binding.skipOverlay.setSkipUiEnabled(!mIsVisible && !mGuideVisible && !mPopupPanelVisible);
     }
