@@ -6,4 +6,6 @@ class VideoOptions : AudioOptions() {
 	// Explicit Default must also suppress the legacy last-audio-language override.
 	var preplayAudioExplicit = false
 	var preplayNeedsMetadata = false
+	var manualAudioSelection = false
+	var manualSubtitleSelection = false
 }

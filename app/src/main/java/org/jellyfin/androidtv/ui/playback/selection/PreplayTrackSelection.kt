@@ -122,6 +122,8 @@ class PreplayTrackSelection(
 		options.preplayAudioExplicit = audio != null
 		options.audioStreamIndex = source?.let { audio?.resolve(item, it, MediaStreamType.AUDIO) }
 		options.subtitleStreamIndex = if (subtitles?.mode == "off") -1 else source?.let { subtitles?.resolve(item, it, MediaStreamType.SUBTITLE) }
+		options.manualAudioSelection = audio?.mode == "track" && options.audioStreamIndex != null
+		options.manualSubtitleSelection = subtitles?.mode == "off" || (subtitles?.mode == "track" && options.subtitleStreamIndex != null)
 		if (source != null && (options.audioStreamIndex != null || options.subtitleStreamIndex != null)) options.mediaSourceId = source.id
 	}
 }

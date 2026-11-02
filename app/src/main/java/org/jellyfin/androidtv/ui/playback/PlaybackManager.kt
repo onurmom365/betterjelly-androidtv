@@ -106,7 +106,7 @@ class PlaybackManager(
 			check(identity != null && identity == selections.accountIdentity())
 			val forcedOff = options.subtitleStreamIndex == -1
 			selections.apply(item, options)
-			if (forcedOff) options.subtitleStreamIndex = -1
+			if (forcedOff) { options.subtitleStreamIndex = -1; options.manualSubtitleSelection = true }
 			options.preplayNeedsMetadata = false
 			PlaybackCapabilitiesDiagnostic.preplay(selections.effective(item, org.jellyfin.sdk.model.api.MediaStreamType.AUDIO)?.mode,
 				selections.effective(item, org.jellyfin.sdk.model.api.MediaStreamType.SUBTITLE)?.mode, options.audioStreamIndex, options.subtitleStreamIndex)

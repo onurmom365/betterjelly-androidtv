@@ -81,4 +81,32 @@ class SubtitleStartupTests : FunSpec({
 		PlaybackCapabilitiesDiagnostic.safeSelectionMode("private-title-or-token") shouldBe "none"
 		PlaybackCapabilitiesDiagnostic.safeSelectionMode("track") shouldBe "track"
 	}
+	test("actual remote handler rejects the captured automatic S&S overwrite after manual Dialogue") {
+		val (controller, _, builder) = fixture()
+		controller.mCurrentOptions.subtitleStreamIndex = 4
+		controller.mCurrentOptions.manualSubtitleSelection = true
+		every { controller.receiveSubtitleCommand(any(), any()) } answers { callOriginal() }
+		controller.receiveSubtitleCommand(3, false)
+		controller.mCurrentOptions.subtitleStreamIndex shouldBe 4
+		verify { controller.traceSubtitle(SubtitleCheckpoint.REMOTE_IGNORED, 3, false) }
+		verify(exactly = 0) { builder.addOverride(any()) }
+	}
+	test("actual remote handler preserves automatic subtitle selection in Default mode") {
+		val (controller, _, _) = fixture()
+		every { controller.receiveSubtitleCommand(any(), any()) } answers { callOriginal() }
+		controller.receiveSubtitleCommand(5, false)
+		controller.mCurrentOptions.subtitleStreamIndex shouldBe 5
+		controller.mPendingSubtitleIndex shouldBe 5
+		controller.mCurrentOptions.manualSubtitleSelection shouldBe false
+	}
+	test("an identified remote user can replace a manual choice and retain that user intent") {
+		val (controller, _, _) = fixture()
+		controller.mCurrentOptions.subtitleStreamIndex = 4
+		controller.mCurrentOptions.manualSubtitleSelection = true
+		every { controller.receiveSubtitleCommand(any(), any()) } answers { callOriginal() }
+		controller.receiveSubtitleCommand(5, true)
+		controller.mCurrentOptions.subtitleStreamIndex shouldBe 5
+		controller.mPendingSubtitleIndex shouldBe 5
+		controller.mCurrentOptions.manualSubtitleSelection shouldBe true
+	}
 })

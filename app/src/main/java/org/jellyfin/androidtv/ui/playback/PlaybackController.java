@@ -28,6 +28,7 @@ import org.jellyfin.androidtv.ui.InteractionTrackerViewModel;
 import org.jellyfin.androidtv.ui.livetv.TvManager;
 import org.jellyfin.androidtv.ui.playback.segment.SegmentSkipSession;
 import org.jellyfin.androidtv.ui.playback.selection.PreplayTrackSelection;
+import org.jellyfin.androidtv.ui.playback.selection.TrackCommandPolicy;
 import org.jellyfin.androidtv.util.TimeUtils;
 import org.jellyfin.androidtv.util.Utils;
 import org.jellyfin.androidtv.util.apiclient.ReportingHelper;
@@ -534,6 +535,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             internalOptions.setSubtitleStreamIndex(mCurrentOptions.getSubtitleStreamIndex());
             internalOptions.setAudioStreamIndex(mCurrentOptions.getAudioStreamIndex());
             internalOptions.setPreplayAudioExplicit(mCurrentOptions.getPreplayAudioExplicit());
+            internalOptions.setManualAudioSelection(mCurrentOptions.getManualAudioSelection());
+            internalOptions.setManualSubtitleSelection(mCurrentOptions.getManualSubtitleSelection());
             internalOptions.setMediaSourceId(mCurrentOptions.getMediaSourceId());
         } else {
             PreplayTrackSelection selections = KoinJavaComponent.<PreplayTrackSelection>get(PreplayTrackSelection.class);
@@ -848,6 +851,33 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             playInternal(getCurrentlyPlayingItem(), mCurrentPosition, mCurrentOptions);
             mPlaybackState = PlaybackState.BUFFERING;
         }
+    }
+
+    public void selectAudioFromControls(int index) {
+        TrackCommandPolicy.markManual(mCurrentOptions, MediaStreamType.AUDIO);
+        switchAudioStream(index);
+    }
+
+    public void selectSubtitleFromControls(int index) {
+        TrackCommandPolicy.markManual(mCurrentOptions, MediaStreamType.SUBTITLE);
+        PlaybackControllerHelperKt.setSubtitleIndex(this, index);
+    }
+
+    public void receiveSubtitleCommand(int index, boolean userControlled) {
+        boolean accepted = TrackCommandPolicy.accepts(mCurrentOptions, MediaStreamType.SUBTITLE, userControlled);
+        PlaybackCapabilitiesDiagnostic.remoteCommand(MediaStreamType.SUBTITLE, index, userControlled, accepted);
+        traceSubtitle(accepted ? SubtitleCheckpoint.REMOTE_REQUEST : SubtitleCheckpoint.REMOTE_IGNORED, index, false);
+        if (!accepted) return;
+        if (userControlled) TrackCommandPolicy.markManual(mCurrentOptions, MediaStreamType.SUBTITLE);
+        PlaybackControllerHelperKt.setSubtitleIndex(this, index);
+    }
+
+    public void receiveAudioCommand(int index, boolean userControlled) {
+        boolean accepted = TrackCommandPolicy.accepts(mCurrentOptions, MediaStreamType.AUDIO, userControlled);
+        PlaybackCapabilitiesDiagnostic.remoteCommand(MediaStreamType.AUDIO, index, userControlled, accepted);
+        if (!accepted) return;
+        if (userControlled) TrackCommandPolicy.markManual(mCurrentOptions, MediaStreamType.AUDIO);
+        switchAudioStream(index);
     }
 
     public void pause() {

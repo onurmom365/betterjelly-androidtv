@@ -16,6 +16,8 @@ Preferences are local to this fork, scoped by Jellyfin server/user IDs. No serve
 
 Library/queue items sometimes omit track metadata. Named choices can use item-level streams for an unambiguous single source; otherwise playback fetches full item metadata only when necessary before negotiation. A valid subtitle request remains pending if its player group has not arrived, and is applied on the track event. Choosing Off cancels that pending request.
 
+Resolved manual audio/subtitle choices and explicit Subtitle Off take precedence over unattributed automatic server track commands during that playback. Default and unresolved/missing matches continue to accept automatic server selection, including Language Failover. Track changes made in the player's controls also retain manual intent for the current playback. Commands attributed to a controlling Jellyfin user still work for deliberate remote control. This is a manual-intent rule, not a replacement language-selection engine; it does not change plugin configuration or send additional server mutations.
+
 ## Returning to a detail page
 
 Jellyfin may omit early progress from Continue Watching because of its server resume thresholds. The standard player keeps a separate, local return point for up to30 minutes within the current app process, scoped to this server/account/title. Returning to a movie/episode page can therefore offer Resume immediately, even during early-playback testing or while the server update is still arriving. This does not alter server resume configuration or synchronize early bookmarks to other devices. Completion, Play from beginning and explicit watched-state changes clear the local point. Normal server resume remains in effect outside this short return window.

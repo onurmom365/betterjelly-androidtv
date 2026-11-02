@@ -47,6 +47,28 @@ class PreplayTrackSelectionTests : FunSpec({
 		options.subtitleStreamIndex shouldBe null
 		options.preplayAudioExplicit shouldBe false
 	}
+	test("only resolved manual tracks and explicit Off block automatic commands") {
+		val s = source("episode", stream(2, audio), stream(5))
+		val episode = item(s)
+		val choices = PreplayTrackSelection(storage()) { "server/user" }
+		choices.save(series, audio, PreplayTrackChoice.track(episode, s, s.mediaStreams!![0]))
+		choices.save(series, sub, PreplayTrackChoice.track(episode, s, s.mediaStreams!![1]))
+		val options = VideoOptions()
+		choices.apply(episode, options)
+		options.manualAudioSelection shouldBe true
+		options.manualSubtitleSelection shouldBe true
+		choices.save(series, audio, PreplayTrackChoice())
+		choices.save(series, sub, PreplayTrackChoice())
+		choices.apply(episode, options)
+		options.manualAudioSelection shouldBe false
+		options.manualSubtitleSelection shouldBe false
+		choices.save(series, sub, PreplayTrackChoice(mode = "off"))
+		choices.apply(episode, options)
+		options.manualSubtitleSelection shouldBe true
+		choices.save(series, sub, PreplayTrackChoice.track(episode, s, stream(9, title = "Missing")))
+		choices.apply(episode, options)
+		options.manualSubtitleSelection shouldBe false
+	}
 	test("manual item indices and source are negotiated before playback") {
 		val s = source("exact", stream(7, audio), stream(11))
 		val movie = item(s, null)

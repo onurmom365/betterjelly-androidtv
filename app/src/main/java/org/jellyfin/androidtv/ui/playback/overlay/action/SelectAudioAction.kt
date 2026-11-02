@@ -45,7 +45,7 @@ class SelectAudioAction(
 				popup = null
 			}
 			setOnMenuItemClickListener { item ->
-				playbackController.switchAudioStream(item.itemId)
+				playbackController.selectAudioFromControls(item.itemId)
 				true
 			}
 		}

@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 enum class SubtitleSelectionOutcome { WAITING, APPLIED, OFF, MISSING_STREAM }
 enum class SubtitleCheckpoint { CREATED, REQUEST, START_ITEM, START_READY, PREPARED, PAUSED_RESUME, BURNED_PATH,
-	SET_REQUEST, UNCHANGED, ENCODE_REQUEST, REMOVE_BURN_REQUEST, REMOTE_REQUEST, CC_OPEN, STOP }
+	SET_REQUEST, UNCHANGED, ENCODE_REQUEST, REMOVE_BURN_REQUEST, REMOTE_REQUEST, REMOTE_IGNORED, CC_OPEN, STOP }
 
 /** Deliberately excludes URLs, IDs, titles, paths, headers and arbitrary exception/codec text. */
 object PlaybackCapabilitiesDiagnostic {
@@ -19,6 +19,9 @@ object PlaybackCapabilitiesDiagnostic {
 	private val controllerSequence = AtomicInteger()
 	@JvmStatic fun nextController() = controllerSequence.incrementAndGet()
 	@JvmStatic fun playerReady(subscribed: Boolean) { Log.i(TAG, "playerPlaying=true controllerSubscribed=$subscribed") }
+	@JvmStatic fun remoteCommand(type: MediaStreamType, index: Int, userControlled: Boolean, accepted: Boolean) {
+		Log.i(TAG, "remoteTrackType=$type remoteIndex=$index hasControllingUser=$userControlled accepted=$accepted")
+	}
 	@JvmStatic fun checkpoint(stage: SubtitleCheckpoint, controller: Int, requested: Int?, current: Int?, sourceDefault: Int?,
 		delivery: SubtitleDeliveryMethod?, playMethod: PlayMethod?, paused: Boolean, burning: Boolean, force: Boolean) {
 		// Enums, per-process anonymous counters, stream numbers and booleans only. No object/string payloads.
