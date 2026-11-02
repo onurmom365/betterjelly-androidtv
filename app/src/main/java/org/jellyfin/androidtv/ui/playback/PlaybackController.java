@@ -77,6 +77,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     int mCurrentIndex;
     protected long mCurrentPosition = 0;
     private PlaybackState mPlaybackState = PlaybackState.IDLE;
+    private final int diagnosticController = PlaybackCapabilitiesDiagnostic.nextController();
 
     private StreamInfo mCurrentStreamInfo;
 
@@ -128,6 +129,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         mHandler = new Handler();
 
         interactionTracker = lazyInteractionTracker.getValue();
+        traceSubtitle(SubtitleCheckpoint.CREATED, null, false);
 
         refreshRateSwitchingBehavior = userPreferences.getValue().get(UserPreferences.Companion.getRefreshRateSwitchingBehavior());
         if (refreshRateSwitchingBehavior != RefreshRateSwitchingBehavior.DISABLED)
@@ -137,6 +139,16 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     public boolean hasFragment() {
         return mFragment != null;
+    }
+
+    public void traceSubtitle(SubtitleCheckpoint stage, @Nullable Integer requested, boolean force) {
+        MediaSourceInfo source = mCurrentStreamInfo == null ? null : mCurrentStreamInfo.getMediaSource();
+        PlaybackCapabilitiesDiagnostic.checkpoint(stage, diagnosticController, requested,
+                mCurrentOptions == null ? null : mCurrentOptions.getSubtitleStreamIndex(),
+                source == null ? null : source.getDefaultSubtitleStreamIndex(),
+                source == null ? null : mCurrentStreamInfo.getSubtitleDeliveryMethod(),
+                mCurrentStreamInfo == null ? null : mCurrentStreamInfo.getPlayMethod(),
+                mPlaybackState == PlaybackState.PAUSED, burningSubs, force);
     }
 
     public CustomPlaybackOverlayFragment getFragment() {
@@ -564,6 +576,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                 AssPlaybackSupport.enabled(userPreferences.getValue()) && playbackRetries == 0
         );
         internalOptions.setProfile(internalProfile);
+        traceSubtitle(SubtitleCheckpoint.REQUEST, internalOptions.getSubtitleStreamIndex(), false);
         return internalOptions;
     }
 
@@ -636,6 +649,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     private void startItem(BaseItemDto item, long position, StreamInfo response) {
+        traceSubtitle(SubtitleCheckpoint.START_ITEM, null, false);
         if (!hasInitializedVideoManager() || !hasFragment()) {
             Timber.w("Error - attempting to play without:%s%s", hasInitializedVideoManager() ? "" : " [videoManager]", hasFragment() ? "" : " [overlay fragment]");
             return;
@@ -663,6 +677,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             mCurrentOptions.setSubtitleStreamIndex(response.getMediaSource().getDefaultSubtitleStreamIndex());
         }
         setDefaultAudioIndex(response);
+        traceSubtitle(SubtitleCheckpoint.START_READY, null, false);
         Timber.i("default audio index set to %s remote default %s", mDefaultAudioIndex, response.getMediaSource().getDefaultAudioStreamIndex());
         Timber.i("default sub index set to %s remote default %s", mCurrentOptions.getSubtitleStreamIndex(), response.getMediaSource().getDefaultSubtitleStreamIndex());
 
@@ -873,6 +888,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     private void stop(boolean completed) {
+        traceSubtitle(SubtitleCheckpoint.STOP, null, false);
         refreshCurrentPosition();
         Timber.i("stop called at %s", mCurrentPosition);
         stopReportLoop();
@@ -1241,6 +1257,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     @Override
     public void onPrepared() {
+        traceSubtitle(SubtitleCheckpoint.PREPARED, null, false);
         if (mPlaybackState == PlaybackState.BUFFERING) {
             if (mFragment != null) {
                 mFragment.setFadingEnabled(true);
@@ -1256,6 +1273,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         Timber.i("Play method: %s", mCurrentStreamInfo.getPlayMethod() == PlayMethod.TRANSCODE ? "Trans" : "Direct");
 
         if (mPlaybackState == PlaybackState.PAUSED) {
+            traceSubtitle(SubtitleCheckpoint.PAUSED_RESUME, null, false);
             mPlaybackState = PlaybackState.PLAYING;
         } else {
             if (!burningSubs) {
@@ -1264,6 +1282,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                 if (currentSubtitleIndex == null) currentSubtitleIndex = -1;
                 PlaybackControllerHelperKt.setSubtitleIndex(this, currentSubtitleIndex, true);
             } else {
+                traceSubtitle(SubtitleCheckpoint.BURNED_PATH, null, false);
                 PlaybackControllerHelperKt.disableDefaultSubtitles(this);
             }
 

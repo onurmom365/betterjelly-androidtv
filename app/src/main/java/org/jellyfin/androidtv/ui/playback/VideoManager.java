@@ -150,6 +150,7 @@ public class VideoManager {
             @Override
             public void onIsPlayingChanged(boolean isPlaying) {
                 if (isPlaying) {
+                    PlaybackCapabilitiesDiagnostic.playerReady(mPlaybackControllerNotifiable != null);
                     if (mPlaybackControllerNotifiable != null) mPlaybackControllerNotifiable.onPrepared();
                     startProgressLoop();
                     _helper.setScreensaverLock(true);

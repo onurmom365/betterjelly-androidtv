@@ -46,7 +46,7 @@ class SubtitleStartupTests : FunSpec({
 		val selector = mockk<DefaultTrackSelector>(relaxed = true) { every { this@mockk.parameters } returns parameters }
 		val player = mockk<ExoPlayer> { every { currentTracks } returns Tracks.EMPTY; every { trackSelector } returns selector }
 		val video = mockk<VideoManager>().apply { mExoPlayer = player }
-		val controller = mockk<PlaybackController> {
+		val controller = mockk<PlaybackController>(relaxUnitFun = true) {
 			every { currentMediaSource } returns source
 		}.apply { mCurrentOptions = VideoOptions(); mVideoManager = video }
 		return Triple(controller, player, builder)

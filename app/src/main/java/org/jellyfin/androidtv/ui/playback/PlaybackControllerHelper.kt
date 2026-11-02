@@ -57,10 +57,14 @@ fun PlaybackController.disableDefaultSubtitles() {
 @OptIn(UnstableApi::class)
 @JvmOverloads
 fun PlaybackController.setSubtitleIndex(index: Int, force: Boolean = false) {
+	traceSubtitle(SubtitleCheckpoint.SET_REQUEST, index, force)
 	Timber.i("Switching subtitles from index ${mCurrentOptions.subtitleStreamIndex} to $index")
 
 	// Already using this subtitle index
-	if (mCurrentOptions.subtitleStreamIndex == index && !force) return
+	if (mCurrentOptions.subtitleStreamIndex == index && !force) {
+		traceSubtitle(SubtitleCheckpoint.UNCHANGED, index, force)
+		return
+	}
 	mPendingSubtitleIndex = null
 
 	// Disable subtitles
@@ -78,6 +82,7 @@ fun PlaybackController.setSubtitleIndex(index: Int, force: Boolean = false) {
 			disableDefaultSubtitles()
 		}
 	} else if (burningSubs) {
+		traceSubtitle(SubtitleCheckpoint.REMOVE_BURN_REQUEST, index, force)
 		Timber.i("Restarting playback to disable subtitle baking")
 
 		// If we're currently burning subs and want to switch streams we need some special behavior
@@ -97,6 +102,7 @@ fun PlaybackController.setSubtitleIndex(index: Int, force: Boolean = false) {
 
 		when (stream.deliveryMethod) {
 			SubtitleDeliveryMethod.ENCODE -> {
+				traceSubtitle(SubtitleCheckpoint.ENCODE_REQUEST, index, force)
 				Timber.i("Restarting playback for subtitle baking")
 
 				stop()

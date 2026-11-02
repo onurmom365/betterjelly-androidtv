@@ -7,6 +7,7 @@ import android.widget.PopupMenu
 import android.widget.Toast
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.ui.playback.PlaybackController
+import org.jellyfin.androidtv.ui.playback.SubtitleCheckpoint
 import org.jellyfin.androidtv.ui.playback.overlay.CustomPlaybackTransportControlGlue
 import org.jellyfin.androidtv.ui.playback.overlay.VideoPlayerAdapter
 import org.jellyfin.androidtv.ui.playback.setSubtitleIndex
@@ -29,6 +30,7 @@ class ClosedCaptionsAction(
 		context: Context,
 		view: View,
 	) {
+		playbackController.traceSubtitle(SubtitleCheckpoint.CC_OPEN, null, false)
 		if (playbackController.currentStreamInfo == null) {
 			Timber.w("StreamInfo null trying to obtain subtitles")
 			Toast.makeText(context, "Unable to obtain subtitle info", Toast.LENGTH_LONG).show()

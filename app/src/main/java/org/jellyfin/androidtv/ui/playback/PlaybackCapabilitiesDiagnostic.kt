@@ -6,12 +6,24 @@ import org.jellyfin.sdk.model.api.MediaStreamType
 import org.jellyfin.sdk.model.api.PlaybackInfoResponse
 import android.util.Log
 import org.jellyfin.sdk.model.api.SubtitleDeliveryMethod
+import org.jellyfin.sdk.model.api.PlayMethod
+import java.util.concurrent.atomic.AtomicInteger
 
 enum class SubtitleSelectionOutcome { WAITING, APPLIED, OFF, MISSING_STREAM }
+enum class SubtitleCheckpoint { CREATED, REQUEST, START_ITEM, START_READY, PREPARED, PAUSED_RESUME, BURNED_PATH,
+	SET_REQUEST, UNCHANGED, ENCODE_REQUEST, REMOVE_BURN_REQUEST, REMOTE_REQUEST, CC_OPEN, STOP }
 
 /** Deliberately excludes URLs, IDs, titles, paths, headers and arbitrary exception/codec text. */
 object PlaybackCapabilitiesDiagnostic {
 	const val TAG = "BetterJellyCapabilities"
+	private val controllerSequence = AtomicInteger()
+	@JvmStatic fun nextController() = controllerSequence.incrementAndGet()
+	@JvmStatic fun playerReady(subscribed: Boolean) { Log.i(TAG, "playerPlaying=true controllerSubscribed=$subscribed") }
+	@JvmStatic fun checkpoint(stage: SubtitleCheckpoint, controller: Int, requested: Int?, current: Int?, sourceDefault: Int?,
+		delivery: SubtitleDeliveryMethod?, playMethod: PlayMethod?, paused: Boolean, burning: Boolean, force: Boolean) {
+		// Enums, per-process anonymous counters, stream numbers and booleans only. No object/string payloads.
+		Log.i(TAG, "controller=$controller checkpoint=$stage requested=$requested current=$current sourceDefault=$sourceDefault delivery=$delivery playMethod=$playMethod paused=$paused burning=$burning force=$force")
+	}
 	private val knownReasons = setOf("AudioCodecNotSupported", "SubtitleCodecNotSupported", "ContainerNotSupported", "VideoCodecNotSupported",
 		"AudioChannelsNotSupported", "AudioBitrateNotSupported", "VideoBitrateNotSupported", "VideoProfileNotSupported", "VideoLevelNotSupported",
 		"VideoResolutionNotSupported", "VideoRangeTypeNotSupported", "DirectPlayError")
