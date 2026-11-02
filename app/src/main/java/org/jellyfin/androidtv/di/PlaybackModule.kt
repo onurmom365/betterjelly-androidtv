@@ -16,6 +16,7 @@ import org.jellyfin.androidtv.ui.browsing.MainActivity
 import org.jellyfin.androidtv.ui.playback.MediaManager
 import org.jellyfin.androidtv.ui.playback.PlaybackLauncher
 import org.jellyfin.androidtv.ui.playback.VideoQueueManager
+import org.jellyfin.androidtv.ui.playback.PlaybackReturnPosition
 import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.ui.playback.selection.AndroidPreplaySelectionStorage
 import org.jellyfin.androidtv.ui.playback.selection.PreplayTrackSelection
@@ -38,8 +39,12 @@ import kotlin.time.Duration.Companion.milliseconds
 import org.jellyfin.androidtv.ui.playback.PlaybackManager as LegacyPlaybackManager
 
 val playbackModule = module {
-	single { LegacyPlaybackManager(get()) }
+	single { LegacyPlaybackManager(get(), get()) }
 	single { VideoQueueManager() }
+	single {
+		val sessions = get<SessionRepository>()
+		PlaybackReturnPosition({ sessions.currentSession.value?.let { "${it.serverId}/${it.userId}" } })
+	}
 	single {
 		val sessions = get<SessionRepository>()
 		PreplayTrackSelection(AndroidPreplaySelectionStorage(androidContext())) {

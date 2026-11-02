@@ -8,6 +8,7 @@ import kotlinx.coroutines.launch
 import org.jellyfin.androidtv.data.compat.StreamInfo
 import org.jellyfin.androidtv.data.model.DataRefreshService
 import org.jellyfin.androidtv.ui.playback.PlaybackController
+import org.jellyfin.androidtv.ui.playback.PlaybackReturnPosition
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.playStateApi
 import org.jellyfin.sdk.model.api.BaseItemDto
@@ -23,6 +24,7 @@ import java.time.Instant
 class ReportingHelper(
 	private val dataRefreshService: DataRefreshService,
 	private val api: ApiClient,
+	private val returnPosition: PlaybackReturnPosition,
 ) {
 	fun reportStart(
 		lifecycleOwner: LifecycleOwner,
@@ -32,6 +34,8 @@ class ReportingHelper(
 		position: Long,
 		paused: Boolean
 	) {
+		// Beginning explicitly starts a new position; server reporting stays unchanged.
+		returnPosition.started(item, position)
 		val info = PlaybackStartInfo(
 			itemId = item.id,
 			positionTicks = position,
@@ -88,7 +92,9 @@ class ReportingHelper(
 		}
 	}
 
-	fun reportStopped(lifecycleOwner: LifecycleOwner, item: BaseItemDto, streamInfo: StreamInfo, position: Long?) {
+	@JvmOverloads
+	fun reportStopped(lifecycleOwner: LifecycleOwner, item: BaseItemDto, streamInfo: StreamInfo, position: Long?, completed: Boolean = false) {
+		returnPosition.stopped(item, position, completed)
 		val info = PlaybackStopInfo(
 			itemId = item.id,
 			positionTicks = position,

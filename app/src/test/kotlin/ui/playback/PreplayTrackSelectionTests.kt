@@ -174,6 +174,41 @@ class PreplayTrackSelectionTests : FunSpec({
 		every { s.defaultSubtitleStreamIndex } returns 9
 		StreamInfo().apply { mediaSource = s }.subtitleDeliveryMethod shouldBe SubtitleDeliveryMethod.EMBED
 	}
+	test("a named subtitle resolves from item-level streams when a single-source queue DTO omits them") {
+		val full = source("same", stream(2, audio), stream(5))
+		val movie = item(full, null)
+		val choices = PreplayTrackSelection(storage()) { "server/user" }
+		choices.save(movie.id, sub, PreplayTrackChoice.track(movie, full, full.mediaStreams!![1]))
+		val sparse = movie.copy(mediaSources = listOf(source("same", stream(2, audio))), mediaStreams = full.mediaStreams)
+		val options = VideoOptions()
+		choices.apply(sparse, options)
+		options.subtitleStreamIndex shouldBe 5
+		options.preplayNeedsMetadata shouldBe false
+	}
+	test("missing subtitle metadata requests full metadata even when audio streams were supplied") {
+		val full = source("same", stream(2, audio), stream(5))
+		val episode = item(full)
+		val choices = PreplayTrackSelection(storage()) { "server/user" }
+		choices.save(episode.id, sub, PreplayTrackChoice.track(episode, full, full.mediaStreams!![1]))
+		val options = VideoOptions()
+		choices.apply(episode.copy(mediaSources = listOf(source("same", stream(2, audio))), mediaStreams = null), options)
+		options.subtitleStreamIndex shouldBe null
+		options.preplayNeedsMetadata shouldBe true
+		choices.apply(episode, options)
+		options.subtitleStreamIndex shouldBe 5
+		options.preplayNeedsMetadata shouldBe false
+	}
+	test("item-level streams cannot supply indices to an ambiguous media version") {
+		val full = source("same", stream(5))
+		val movie = item(full, null)
+		val choices = PreplayTrackSelection(storage()) { "server/user" }
+		choices.save(movie.id, sub, PreplayTrackChoice.track(movie, full, full.mediaStreams!!.single()))
+		val sparse = movie.copy(mediaSources = listOf(source("same"), source("other")), mediaStreams = full.mediaStreams)
+		val options = VideoOptions()
+		choices.apply(sparse, options)
+		options.subtitleStreamIndex shouldBe null
+		options.preplayNeedsMetadata shouldBe true
+	}
 	test("missing or disabled subtitle indices drop safely during negotiation") {
 		val s = source("source", stream(0, audio))
 		for (index in listOf(-1, 8)) {

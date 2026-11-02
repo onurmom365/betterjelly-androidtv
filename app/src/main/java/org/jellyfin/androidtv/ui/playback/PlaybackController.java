@@ -87,6 +87,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     private Boolean spinnerOff = false;
 
     protected VideoOptions mCurrentOptions;
+    protected Integer mPendingSubtitleIndex;
     private int mDefaultAudioIndex = -1;
     protected boolean burningSubs = false;
     private float mRequestedPlaybackSpeed = -1.0f;
@@ -523,7 +524,12 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             internalOptions.setPreplayAudioExplicit(mCurrentOptions.getPreplayAudioExplicit());
             internalOptions.setMediaSourceId(mCurrentOptions.getMediaSourceId());
         } else {
-            KoinJavaComponent.<PreplayTrackSelection>get(PreplayTrackSelection.class).apply(item, internalOptions);
+            PreplayTrackSelection selections = KoinJavaComponent.<PreplayTrackSelection>get(PreplayTrackSelection.class);
+            selections.apply(item, internalOptions);
+            PlaybackCapabilitiesDiagnostic.preplay(
+                    selections.effective(item, MediaStreamType.AUDIO) == null ? null : selections.effective(item, MediaStreamType.AUDIO).getMode(),
+                    selections.effective(item, MediaStreamType.SUBTITLE) == null ? null : selections.effective(item, MediaStreamType.SUBTITLE).getMode(),
+                    internalOptions.getAudioStreamIndex(), internalOptions.getSubtitleStreamIndex());
         }
         if (forcedSubtitleIndex != null) {
             internalOptions.setSubtitleStreamIndex(forcedSubtitleIndex);
@@ -863,6 +869,10 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     public void stop() {
+        stop(false);
+    }
+
+    private void stop(boolean completed) {
         refreshCurrentPosition();
         Timber.i("stop called at %s", mCurrentPosition);
         stopReportLoop();
@@ -872,7 +882,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             if (mVideoManager != null && mVideoManager.isPlaying()) mVideoManager.stopPlayback();
             if (getCurrentlyPlayingItem() != null && mCurrentStreamInfo != null) {
                 Long mbPos = mCurrentPosition * 10000;
-                reportingHelper.getValue().reportStopped(mFragment, getCurrentlyPlayingItem(), mCurrentStreamInfo, mbPos);
+                reportingHelper.getValue().reportStopped(mFragment, getCurrentlyPlayingItem(), mCurrentStreamInfo, mbPos, completed);
             }
             clearPlaybackSessionOptions();
         }
@@ -907,6 +917,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     private void clearPlaybackSessionOptions() {
+        mPendingSubtitleIndex = null;
         mDefaultAudioIndex = -1;
         mSeekPosition = -1;
         finishedInitialSeek = false;
@@ -1183,7 +1194,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     private void itemComplete() {
         interactionTracker.onEpisodeWatched();
-        stop();
+        stop(true);
         resetPlayerErrors();
 
         BaseItemDto nextItem = getNextItem();
@@ -1219,6 +1230,13 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     @Override
     public void onPlaybackSpeedChange(float newSpeed) {
         // TODO, implement speed change handling
+    }
+
+    @Override
+    public void onTracksChanged() {
+        if (mPendingSubtitleIndex != null && mCurrentStreamInfo != null && hasInitializedVideoManager()) {
+            PlaybackControllerHelperKt.setSubtitleIndex(this, mPendingSubtitleIndex, true);
+        }
     }
 
     @Override

@@ -61,9 +61,11 @@ fun PlaybackController.setSubtitleIndex(index: Int, force: Boolean = false) {
 
 	// Already using this subtitle index
 	if (mCurrentOptions.subtitleStreamIndex == index && !force) return
+	mPendingSubtitleIndex = null
 
 	// Disable subtitles
 	if (index == -1) {
+		PlaybackCapabilitiesDiagnostic.subtitle(index, SubtitleSelectionOutcome.OFF, 0)
 		mCurrentOptions.subtitleStreamIndex = -1
 
 		if (burningSubs) {
@@ -88,6 +90,7 @@ fun PlaybackController.setSubtitleIndex(index: Int, force: Boolean = false) {
 		val mediaSource = currentMediaSource
 		val stream = mediaSource.mediaStreams?.firstOrNull { it.type == MediaStreamType.SUBTITLE && it.index == index }
 		if (stream == null) {
+			PlaybackCapabilitiesDiagnostic.subtitle(index, SubtitleSelectionOutcome.MISSING_STREAM, 0)
 			Timber.w("Failed to find correct media stream")
 			return setSubtitleIndex(-1)
 		}
@@ -124,17 +127,23 @@ fun PlaybackController.setSubtitleIndex(index: Int, force: Boolean = false) {
 
 					mVideoManager.mExoPlayer.currentTracks.groups
 						.filter { it.type == C.TRACK_TYPE_TEXT }
-						.filterNot { it.length == 1 && it.getTrackFormat(0).id?.endsWith(":JF_EXTERNAL:$index") == true }
+						.filterNot { group -> group.length == 1 && group.getTrackFormat(0).id.orEmpty().contains("JF_EXTERNAL:") }
 						.getOrNull(localIndex)
 				}?.mediaTrackGroup
 
 				if (group == null) {
-					Timber.w("Failed to find correct subtitle group for method ${stream.deliveryMethod}")
-					return setSubtitleIndex(-1)
+					// Track groups may arrive after the initial prepared callback. Keep the user's intent.
+					mCurrentOptions.subtitleStreamIndex = index
+					mPendingSubtitleIndex = index
+					PlaybackCapabilitiesDiagnostic.subtitle(index, SubtitleSelectionOutcome.WAITING,
+						mVideoManager.mExoPlayer.currentTracks.groups.count { it.type == C.TRACK_TYPE_TEXT })
+					return
 				}
 
 				Timber.i("Enabling subtitle group $index via method ${stream.deliveryMethod}")
 				mCurrentOptions.subtitleStreamIndex = index
+				PlaybackCapabilitiesDiagnostic.subtitle(index, SubtitleSelectionOutcome.APPLIED,
+					mVideoManager.mExoPlayer.currentTracks.groups.count { it.type == C.TRACK_TYPE_TEXT })
 				with(mVideoManager.mExoPlayer.trackSelector!!) {
 					parameters = parameters.buildUpon()
 						.clearOverridesOfType(C.TRACK_TYPE_TEXT)

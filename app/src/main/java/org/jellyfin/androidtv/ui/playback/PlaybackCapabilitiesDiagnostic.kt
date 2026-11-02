@@ -7,6 +7,8 @@ import org.jellyfin.sdk.model.api.PlaybackInfoResponse
 import android.util.Log
 import org.jellyfin.sdk.model.api.SubtitleDeliveryMethod
 
+enum class SubtitleSelectionOutcome { WAITING, APPLIED, OFF, MISSING_STREAM }
+
 /** Deliberately excludes URLs, IDs, titles, paths, headers and arbitrary exception/codec text. */
 object PlaybackCapabilitiesDiagnostic {
 	const val TAG = "BetterJellyCapabilities"
@@ -21,12 +23,20 @@ object PlaybackCapabilitiesDiagnostic {
 		it in setOf("opus", "libopus", "aac", "aac_latm", "ac3", "eac3", "flac", "dts", "dca", "truehd", "vorbis", "pcm_s16le")
 	} ?: "other"
 	@JvmStatic fun playerError(code: Int) { Log.i(TAG, "playerErrorCode=$code") }
+	@JvmStatic fun subtitle(index: Int?, outcome: SubtitleSelectionOutcome, groups: Int) {
+		Log.i(TAG, "subtitleIndex=$index subtitleOutcome=$outcome textGroups=$groups")
+	}
+	internal fun safeSelectionMode(value: String?) = value?.takeIf { it in setOf("default", "off", "track") } ?: "none"
+	@JvmStatic fun preplay(audioMode: String?, subtitleMode: String?, audioIndex: Int?, subtitleIndex: Int?) {
+		Log.i(TAG, "preplayAudio=${safeSelectionMode(audioMode)} preplaySubtitle=${safeSelectionMode(subtitleMode)} resolvedAudioIndex=$audioIndex resolvedSubtitleIndex=$subtitleIndex")
+	}
 	internal fun negotiation(options: VideoOptions, response: PlaybackInfoResponse) {
 		val source = response.mediaSources.firstOrNull { it.id == options.mediaSourceId } ?: response.mediaSources.firstOrNull() ?: return
 		val audio = source.mediaStreams.orEmpty().filter { it.type == MediaStreamType.AUDIO }
 			.let { tracks -> tracks.firstOrNull { it.index == (options.audioStreamIndex ?: source.defaultAudioStreamIndex) } ?: tracks.firstOrNull() }
 		val opusAllowed = options.profile?.directPlayProfiles.orEmpty().any { "opus" in it.audioCodec.orEmpty().split(',') }
 		val assAllowed = options.profile?.subtitleProfiles.orEmpty().any { it.format == "ass" && it.method == SubtitleDeliveryMethod.EMBED }
+		Log.i(TAG, "requestedSubtitleIndex=${options.subtitleStreamIndex} responseSubtitleIndex=${source.defaultSubtitleStreamIndex}")
 		Log.i(TAG, "requestDirectPlay=%s requestDirectStream=%s profileOpus=%s profileAss=%s audioCodec=%s channels=%s sampleRate=%s sourceDirectPlay=%s sourceDirectStream=%s reasons=%s".format(
 			options.enableDirectPlay, options.enableDirectStream, opusAllowed, assAllowed, safeCodec(audio?.codec), audio?.channels, audio?.sampleRate,
 			source.supportsDirectPlay, source.supportsDirectStream, safeReasons(source.transcodingUrl)))

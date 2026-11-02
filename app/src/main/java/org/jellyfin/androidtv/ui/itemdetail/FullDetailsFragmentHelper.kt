@@ -14,6 +14,7 @@ import org.jellyfin.androidtv.data.repository.ItemMutationRepository
 import org.jellyfin.androidtv.data.repository.ItemRepository
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
+import org.jellyfin.androidtv.ui.playback.PlaybackReturnPosition
 import org.jellyfin.androidtv.util.TimeUtils
 import org.jellyfin.androidtv.util.apiclient.getSeriesOverview
 import org.jellyfin.androidtv.util.popupMenu
@@ -140,6 +141,8 @@ fun FullDetailsFragment.togglePlayed() {
 			item = mBaseItem.id,
 			played = !(mBaseItem.userData?.played ?: false)
 		)
+		val returnPosition by inject<PlaybackReturnPosition>()
+		returnPosition.clear(mBaseItem.id)
 		mBaseItem = mBaseItem.copyWithUserData(userData)
 		mWatchedToggleButton.isActivated = userData.played
 
@@ -196,6 +199,7 @@ fun FullDetailsFragment.playTrailers() {
 
 fun FullDetailsFragment.getItem(id: UUID, callback: (item: BaseItemDto?) -> Unit) {
 	val api by inject<ApiClient>()
+	val returnPosition by inject<PlaybackReturnPosition>()
 
 	lifecycleScope.launch {
 		val response = try {
@@ -207,8 +211,23 @@ fun FullDetailsFragment.getItem(id: UUID, callback: (item: BaseItemDto?) -> Unit
 			null
 		}
 
-		callback(response)
+		callback(response?.let(returnPosition::apply))
 	}
+}
+
+fun FullDetailsFragment.restorePlaybackReturnPosition() {
+	val item = mBaseItem ?: return
+	if (item.type != BaseItemKind.MOVIE && item.type != BaseItemKind.EPISODE) return
+	val returnPosition by inject<PlaybackReturnPosition>()
+	mBaseItem = returnPosition.apply(item)
+	if (mBaseItem === item) return
+	mResumeButton?.apply {
+		isVisible = mBaseItem.canResume
+		setLabel(getString(R.string.lbl_resume_from, TimeUtils.formatMillis(
+			((mBaseItem.userData?.playbackPositionTicks ?: 0) / 10000 - resumePreroll).coerceAtLeast(0))))
+		if (isVisible) requestFocus()
+	}
+	playButton?.setLabel(getString(getPlayButtonLabel()))
 }
 
 fun FullDetailsFragment.populatePreviousButton() {

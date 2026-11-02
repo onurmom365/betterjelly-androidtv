@@ -13,6 +13,8 @@ import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.hlsSegmentApi
 import org.jellyfin.sdk.api.client.extensions.mediaInfoApi
 import org.jellyfin.sdk.api.client.extensions.videosApi
+import org.jellyfin.sdk.api.client.extensions.userLibraryApi
+import org.jellyfin.androidtv.ui.playback.selection.PreplayTrackSelection
 import org.jellyfin.sdk.model.api.PlayMethod
 import org.jellyfin.sdk.model.api.PlaybackInfoDto
 import org.jellyfin.sdk.model.api.PlaybackInfoResponse
@@ -59,7 +61,8 @@ private fun createStreamInfo(
 }
 
 class PlaybackManager(
-	private val api: ApiClient
+	private val api: ApiClient,
+	private val selections: PreplayTrackSelection,
 ) {
 	fun getVideoStreamInfo(
 		lifecycleOwner: LifecycleOwner,
@@ -96,6 +99,18 @@ class PlaybackManager(
 		options: VideoOptions,
 		startTimeTicks: Long
 	) = runCatching {
+		if (options.preplayNeedsMetadata) {
+			// Resolve named choices from full metadata when a library/queue DTO omitted its streams.
+			val identity = selections.accountIdentity()
+			val item = withContext(Dispatchers.IO) { api.userLibraryApi.getItem(requireNotNull(options.itemId)).content }
+			check(identity != null && identity == selections.accountIdentity())
+			val forcedOff = options.subtitleStreamIndex == -1
+			selections.apply(item, options)
+			if (forcedOff) options.subtitleStreamIndex = -1
+			options.preplayNeedsMetadata = false
+			PlaybackCapabilitiesDiagnostic.preplay(selections.effective(item, org.jellyfin.sdk.model.api.MediaStreamType.AUDIO)?.mode,
+				selections.effective(item, org.jellyfin.sdk.model.api.MediaStreamType.SUBTITLE)?.mode, options.audioStreamIndex, options.subtitleStreamIndex)
+		}
 		val response = withContext(Dispatchers.IO) {
 			api.mediaInfoApi.getPostedPlaybackInfo(
 				itemId = requireNotNull(options.itemId) { "Item id cannot be null" },

@@ -41,10 +41,19 @@ data class PreplayTrackChoice(
 	fun resolve(item: BaseItemDto, source: MediaSourceInfo, type: MediaStreamType): Int? {
 		if (mode == "off" && type == MediaStreamType.SUBTITLE) return -1
 		if (mode != "track") return null
-		val matches = source.mediaStreams.orEmpty().filter { it.type == type && matches(it) }
+		val matches = sourceStreams(item, source).filter { it.type == type && matches(it) }
 		// An index is meaningful only in the original item AND media source, with unchanged track metadata.
 		if (itemId == item.id.toString() && sourceId == source.id) return matches.firstOrNull { it.index == index }?.index
 		return matches.singleOrNull()?.index
+	}
+}
+
+private fun sourceStreams(item: BaseItemDto, source: MediaSourceInfo): List<MediaStream> {
+	// Library list DTOs can have streams only on the item. Never borrow them across versions.
+	val supplied = source.mediaStreams.orEmpty()
+	if (item.mediaSources?.size != 1) return supplied
+	return supplied + item.mediaStreams.orEmpty().filter { candidate ->
+		supplied.none { it.index == candidate.index && it.type == candidate.type }
 	}
 }
 
@@ -91,6 +100,9 @@ class PreplayTrackSelection(
 		val audio = effective(item, MediaStreamType.AUDIO)
 		val subtitles = effective(item, MediaStreamType.SUBTITLE)
 		val source = source(item)
+		val streams = source?.let { sourceStreams(item, it) }.orEmpty()
+		options.preplayNeedsMetadata = (audio?.mode == "track" && streams.none { it.type == MediaStreamType.AUDIO }) ||
+			(subtitles?.mode == "track" && streams.none { it.type == MediaStreamType.SUBTITLE })
 		options.preplayAudioExplicit = audio != null
 		options.audioStreamIndex = source?.let { audio?.resolve(item, it, MediaStreamType.AUDIO) }
 		options.subtitleStreamIndex = if (subtitles?.mode == "off") -1 else source?.let { subtitles?.resolve(item, it, MediaStreamType.SUBTITLE) }

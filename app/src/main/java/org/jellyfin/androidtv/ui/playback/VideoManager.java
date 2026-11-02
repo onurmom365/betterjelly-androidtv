@@ -194,6 +194,7 @@ public class VideoManager {
             @Override
             public void onTracksChanged(Tracks tracks) {
                 Timber.d("Tracks changed");
+                if (mPlaybackControllerNotifiable != null) mPlaybackControllerNotifiable.onTracksChanged();
             }
         });
     }
