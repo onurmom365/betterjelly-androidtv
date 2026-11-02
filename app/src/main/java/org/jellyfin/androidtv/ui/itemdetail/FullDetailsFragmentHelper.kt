@@ -75,6 +75,12 @@ fun FullDetailsFragment.showDetailsMenu(
 	baseItemDto: BaseItemDto,
 ) = popupMenu(requireContext(), view) {
 	// for each button check if it exists (not-null) and is invisible (overflow prevention)
+	if (audioTrackButton?.isVisible == false) {
+		item(getString(R.string.preplay_audio)) { showPreplayTracks(true) }
+	}
+	if (subtitleTrackButton?.isVisible == false) {
+		item(getString(R.string.preplay_subtitles)) { showPreplayTracks(false) }
+	}
 	if (queueButton?.isVisible == false) {
 		item(getString(R.string.lbl_add_to_queue)) { addItemToQueue() }
 	}

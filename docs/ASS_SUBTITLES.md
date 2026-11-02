@@ -21,4 +21,4 @@ Opus was already included in the original Direct-mode profile. Downmix mode inte
 
 For targeted investigation, the new **BetterJellyCapabilities** log tag emits only capability/request flags, whitelisted codec/reason names, numeric audio properties and numeric player error codes. It excludes URLs, IDs, titles, paths, arbitrary exception text, headers and credentials. Read only that tag; never share normal unfiltered player or network logs. `requestDirectPlay=false` after a player error indicates retry/fallback rather than an absent codec entry. `profileOpus=true` and `profileAss=true` show what was advertised, not proof of actual decoding or Direct Play.
 
-Pre-play audio/subtitle controls on movie/episode/series detail pages are a separate requested milestone; this compatibility patch does not introduce those controls or a language-failover engine.
+Manual pre-play audio/subtitle controls are documented in [PREPLAY_TRACKS.md](PREPLAY_TRACKS.md). Their Default option delegates to Jellyfin/Language Failover; neither feature introduces an automatic language-failover engine.

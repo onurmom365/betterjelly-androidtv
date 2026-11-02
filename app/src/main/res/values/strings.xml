@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+	<string name="preplay_audio">Audio</string>
+	<string name="preplay_subtitles">Subtitles</string>
+	<string name="preplay_loading">Loading tracks…</string>
+	<string name="preplay_default">Default — Jellyfin / Language Failover</string>
+	<string name="preplay_inherit">Use series selection (otherwise Jellyfin default)</string>
+	<string name="preplay_off">Off — no subtitles</string>
+	<string name="preplay_series_scope">Remember for this series</string>
+	<string name="preplay_item_scope">Remember for this title</string>
+	<string name="preplay_unavailable">%1$s — unavailable here; using Jellyfin default</string>
+	<string name="preplay_load_failed">Could not load tracks. Please try again.</string>
+	<string name="preplay_internal_player">Pre-play track choices require the standard internal player. Turn off External player and the experimental player rewrite in Playback settings.</string>
     <string name="app_name_release" translatable="false" tools:ignore="UnusedResources">Jellyfin</string>
     <string name="app_name_debug" translatable="false" tools:ignore="UnusedResources">Jellyfin Debug</string>
     <string name="video_error_unknown_error">Failed to load video</string>

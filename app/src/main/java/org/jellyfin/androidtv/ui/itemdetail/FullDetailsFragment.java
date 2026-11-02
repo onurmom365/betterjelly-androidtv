@@ -156,6 +156,7 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
+        mTrackPickerOpen = false;
         FragmentFullDetailsBinding binding = FragmentFullDetailsBinding.inflate(getLayoutInflater(), container, false);
 
         BUTTON_SIZE = Utils.convertDpToPixel(requireContext(), 40);
@@ -757,6 +758,9 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
     TextUnderButton moreButton;
     TextUnderButton playButton = null;
     TextUnderButton trailerButton = null;
+    TextUnderButton audioTrackButton = null;
+    TextUnderButton subtitleTrackButton = null;
+    boolean mTrackPickerOpen = false;
 
     int getPlayButtonLabel() {
         if (BaseItemExtensionsKt.isLiveTv(mBaseItem)) return R.string.lbl_tune_to_channel;
@@ -767,6 +771,8 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
     }
 
     private void addButtons(int buttonSize) {
+        audioTrackButton = null;
+        subtitleTrackButton = null;
         BaseItemDto baseItem = mBaseItem;
         String buttonLabel;
         if (baseItem.getType() == BaseItemKind.SERIES) {
@@ -797,6 +803,16 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
                 }
             });
             mDetailsOverviewRow.addAction(playButton);
+
+            if (baseItem.getType() == BaseItemKind.MOVIE || baseItem.getType() == BaseItemKind.EPISODE
+                    || baseItem.getType() == BaseItemKind.SERIES) {
+                audioTrackButton = TextUnderButton.create(requireContext(), R.drawable.ic_select_audio, buttonSize, 2,
+                        getString(R.string.preplay_audio), v -> PreplayTrackPickerKt.showPreplayTracks(this, true));
+                subtitleTrackButton = TextUnderButton.create(requireContext(), R.drawable.ic_select_subtitle, buttonSize, 2,
+                        getString(R.string.preplay_subtitles), v -> PreplayTrackPickerKt.showPreplayTracks(this, false));
+                mDetailsOverviewRow.addAction(audioTrackButton);
+                mDetailsOverviewRow.addAction(subtitleTrackButton);
+            }
 
             if (isSeries && !isStarted) {
                 FullDetailsFragmentHelperKt.getNextUpEpisode(this, nextUpEpisode -> {
@@ -1130,6 +1146,8 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
 
         List<TextUnderButton> actionsList = new ArrayList<>();
         // added in order of priority (should match res/menu/menu_details_more.xml)
+        if (audioTrackButton != null) actionsList.add(audioTrackButton);
+        if (subtitleTrackButton != null) actionsList.add(subtitleTrackButton);
         if (queueButton != null) actionsList.add(queueButton);
         if (trailerButton != null) actionsList.add(trailerButton);
         if (shuffleButton != null) actionsList.add(shuffleButton);

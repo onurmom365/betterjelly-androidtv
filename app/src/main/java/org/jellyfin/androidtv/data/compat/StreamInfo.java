@@ -73,7 +73,11 @@ public class StreamInfo {
     public final org.jellyfin.sdk.model.api.SubtitleDeliveryMethod getSubtitleDeliveryMethod() {
         Integer subtitleStreamIndex = MediaSource.getDefaultSubtitleStreamIndex();
         if (subtitleStreamIndex == null || subtitleStreamIndex == -1) return SubtitleDeliveryMethod.DROP;
-        return MediaSource.getMediaStreams().get(subtitleStreamIndex).getDeliveryMethod();
+        if (MediaSource.getMediaStreams() == null) return SubtitleDeliveryMethod.DROP;
+        return MediaSource.getMediaStreams().stream()
+                .filter(stream -> stream.getType() == MediaStreamType.SUBTITLE && stream.getIndex() == subtitleStreamIndex)
+                .map(MediaStream::getDeliveryMethod).filter(java.util.Objects::nonNull)
+                .findFirst().orElse(SubtitleDeliveryMethod.DROP);
     }
 
     private String PlaySessionId;
