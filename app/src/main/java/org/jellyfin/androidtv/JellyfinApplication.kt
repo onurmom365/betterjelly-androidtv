@@ -15,6 +15,7 @@ import org.jellyfin.androidtv.data.eventhandling.SocketHandler
 import org.jellyfin.androidtv.data.repository.NotificationsRepository
 import org.jellyfin.androidtv.integration.LeanbackChannelWorker
 import org.jellyfin.androidtv.telemetry.TelemetryService
+import org.jellyfin.androidtv.ui.update.configureUpdateSchedule
 import org.koin.android.ext.android.inject
 import java.util.concurrent.TimeUnit
 
@@ -28,6 +29,7 @@ class JellyfinApplication : Application() {
 
 		val notificationsRepository by inject<NotificationsRepository>()
 		notificationsRepository.addDefaultNotifications()
+		configureUpdateSchedule(this)
 	}
 
 	/**
@@ -39,8 +41,8 @@ class JellyfinApplication : Application() {
 
 		// Update background worker
 		launch {
-			// Cancel all current workers
-			workManager.cancelAllWork().await()
+			// Refresh channel work on account changes without cancelling device-wide update checks.
+			workManager.cancelAllWorkByTag(LeanbackChannelWorker::class.java.name).await()
 
 			// Recreate periodic workers
 			workManager.enqueueUniquePeriodicWork(

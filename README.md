@@ -15,6 +15,7 @@ An independent Jellyfin Android TV fork with remote seeking improvements and nat
 - Regular Search includes Seerr poster results above library results. Native title details, season selection, request review/history and permitted failed-request Retry/Delete controls.
 - Seerr quality profiles, root folders and existing tags, subject to the signed-in user's permissions. Configurable LAN/HTTPS address, separate encrypted sessions and foreground recovery.
 - Jellyfin, Seerr account or Plex sign-in according to the chosen Seerr server's enabled methods.
+- In-app GitHub updates with daily availability checks, release notes, verified APK downloads and user-confirmed installation. Daily checks also work while the app stays open; prompts appear only on Home.
 
 Seerr requires a separately configured server. Intro segments and trickplay images require server-provided data. Jellyfin browsing and playback remain independent of Seerr availability.
 
@@ -24,7 +25,7 @@ Tested on an NVIDIA Shield. The universal APK includes ARM 32-bit/64-bit and x86
 
 The application ID is **`org.jellyfin.androidtv.debug`**, retained from the tested development builds to preserve their data. It is separate from official `org.jellyfin.androidtv`. Release APKs are not debuggable. If both are installed, both may be labelled Jellyfin; identify the fork in its version information or Android App info.
 
-Install a newer signed APK over the existing fork to retain settings. Do not uninstall first. Downloads are currently manual: an in-app updater is planned, not included in 1.0.0. Official store updates do not update this fork.
+Version 1.0.1 adds **Settings → About → Check for updates**. Review the update, choose Download update, then Install update and confirm the system installer. Compatible settings and saved sessions are retained; do not uninstall first. You may need to allow Jellyfin to install updates once. Daily background checks can be switched off, do not require closing the app, and defer prompts until Home. Android sleep/network restrictions can delay a check; downloads and installs always require your selection. Existing 1.0.0 users need Downloader code 8769319 once to get the updater. Official store updates do not update this fork.
 
 ## Source and license
 

@@ -25,11 +25,15 @@ Search, Requests and request review can be checked without submitting media. Act
 
 ## Update while preserving settings
 
-Download the latest APK using the same link and choose **Install** over the existing fork. Do not uninstall or clear data. Matching application ID and signing identity preserve compatible local settings and sessions; expired server sessions may need sign-in again.
+In 1.0.1 and later, open **Settings → About → Check for updates**. Review the version/notes, select **Download update**, then **Install update**. If asked, allow **Jellyfin** in **Install unknown apps**, return to the updater and select Install update again. Confirm the system install dialog. Cancelling the download/installer leaves the current app and settings in place.
+
+Automatic checks run about once every 24 hours, even if the app stays open, using Android's persistent background scheduler. They check availability only, require a network connection and may be delayed by sleep or OS power restrictions. An unseen compatible update prompts on Home; playback is not interrupted. **Automatic checks: Off** disables the daily job. Manual Check for updates bypasses the daily schedule and remains available.
+
+For an existing 1.0.0 installation, use Downloader code **8769319** or the download link once to install a version containing the updater. The same code/link remains a fallback for later manual updates. Install over the existing fork: do not uninstall or clear data. Matching application ID and signing identity preserve compatible local settings and sessions; expired server sessions may need sign-in again.
 
 The fork's package is `org.jellyfin.androidtv.debug`; official Jellyfin is `org.jellyfin.androidtv`. Both can coexist, even though both display Jellyfin. Existing Jellyfin Debug development installations update to this release and become labelled Jellyfin. Official app settings do not transfer automatically.
 
-There is no in-app updater in 1.0.0. Future releases will use the same package/signing identity and increasing version codes.
+Before handing a file to Android's installer, the updater checks the actual APK's package, newer version, non-debuggable status, signing identity and SHA-256. It uses this fork's public GitHub Releases only; no GitHub account, Jellyfin/Seerr credential or storage permission is used for updating. Silent/unattended installation is not promised. Future releases retain the package/signing identity and increase version codes.
 
 ## Verification and troubleshooting
 

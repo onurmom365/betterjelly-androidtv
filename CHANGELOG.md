@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1 — 2026-11-01
+
+- Added Settings → About → Check for updates, release notes, download progress/cancellation and verified in-place system installation.
+- Added daily availability checks through Android's persistent background scheduler, including when the app stays open. Prompts appear only on Home; downloads/installations remain user initiated. Automatic checks can be disabled and may be delayed by OS sleep/network restrictions.
+- Updates use this fork's public GitHub Releases with bounded metadata/downloads, SHA-256, package/version/non-debuggable checks and the existing signing identity. No Jellyfin/Seerr credentials are used.
+- Added a narrowly scoped FileProvider and the user-controlled install permission. Account/channel refresh preserves the independent daily update schedule. No media-player or Seerr behavior/dependency changes.
+- Existing 1.0.0 installations need Downloader code 8769319 once to receive the updater. Later updates can be downloaded from inside the app.
+
 ## 1.0.0 — 2026-11-01
 
 First public release of this independent Jellyfin Android TV fork, based on upstream v0.19.10.

@@ -10,7 +10,7 @@ Set `JAVA_HOME` and `ANDROID_HOME` for your installation, then run:
 ./gradlew :app:testDebugUnitTest assembleDebug
 ```
 
-The default fork version is 1.0.0. Set `JELLYFIN_VERSION` to a semantic release version for subsequent builds. Version codes use the existing upstream mapping: 1.0.0 → 1000099, 1.0.1 → 1000199. Never publish a release whose code does not exceed the installed/released version.
+The default fork version is 1.0.1. Set `JELLYFIN_VERSION` to a semantic release version for subsequent builds. Version codes use the existing upstream mapping: 1.0.0 → 1000099, 1.0.1 → 1000199. Never publish a release whose code does not exceed the installed/released version.
 
 Both build types use `org.jellyfin.androidtv.debug`, preserving the existing fork identity independently of official Jellyfin. Release builds display Jellyfin; development builds display Jellyfin Debug. Both use the original Jellyfin artwork/splash assets. Building a debug APK on another machine normally creates a different signing identity and will not update a maintainer-signed installation.
 
@@ -38,6 +38,10 @@ Before publishing, verify the actual APK package/version/label, `debuggable=fals
 
 Publish the tested APK, `SHA256SUMS.txt`, `release.json` and release notes from the exact committed/tagged source. GitHub's source archives at that tag provide the corresponding source; all copyright/license notices and dependency declarations remain included. Keep local device snapshots, credentials, sessions, keys and SDK configuration out of uploads. The upstream deployment workflow has been removed; publication is deliberately performed from verified local assets, not an unconfigured cloud signing job.
 
-## Future updater
+## Updater release contract
 
-1.0.0 supports manual in-place APK updates. `release.json` records the package, code, minimum SDK, asset URL, hash and signing certificate for release tracking; the current app does not consume it. A later client milestone can check releases outside playback, show changes, validate a download and invoke the system installer. Normal installation confirmation should be expected on Shield/Fire OS; silent installation is not promised.
+1.0.1 consumes the public GitHub latest stable release API and that release's `release.json`. Publish exactly one `betterjelly-androidtv.apk` and one `release.json` asset; GitHub must supply SHA-256 asset digests. Publish a normal stable tag `vMAJOR.MINOR.PATCH`, not a draft/prerelease. The JSON must use schema 1 and match the tag, package, semantic version code, non-debuggable status, minimum SDK, immutable tagged APK URL, SHA-256 and retained signing certificate, as in 1.0.0's metadata. Hash both public assets correctly. Stage/verify assets as a draft before publishing so clients never see an incomplete release.
+
+The isolated updater follows only exact repository URLs and GitHub's HTTPS asset CDN redirects; it never uses Jellyfin/Seerr clients, cookies or tokens. Before installation it re-reads the file and actual installed/downloaded package certificates and versions. The non-exported FileProvider grants only temporary read access to the selected updater file. Keep the release verification script and signing identity checks in the publication process; never upload the private key.
+
+Daily availability checks use one device-wide 24-hour WorkManager schedule with network constraints and KEEP semantics. The schedule survives user-session changes; channel refresh cancels only channel workers. Availability is cached and observed while Home is visible, so an app left open all day can show a new-version notice without a restart. Playback gets no update popup. Daily timing is inexact under Android sleep/power/network restrictions; disabling automatic checks cancels the named job. Downloads and system installation remain explicit user actions. Existing 1.0.0 users must install the updater-containing APK once through Downloader/manual sideload. Normal system installation confirmation should be expected on Shield/Fire OS; silent installation is not promised.
