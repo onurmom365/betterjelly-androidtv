@@ -91,6 +91,7 @@ object PlaybackCapabilitiesDiagnostic {
 		}
 	}
 	@JvmStatic fun hlsSelected(uri: String) { copyRequest("SELECTED", uri) }
+	@JvmStatic fun remuxRecovery() { Log.i(TAG, "containerRemuxPreferred=true") }
 	@JvmStatic fun videoTracks(tracks: Tracks) {
 		tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }.take(12).forEachIndexed { groupIndex, group ->
 			(0 until minOf(group.length, 12)).forEach { index ->

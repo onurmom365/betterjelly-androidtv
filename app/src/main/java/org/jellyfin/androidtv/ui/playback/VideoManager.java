@@ -90,6 +90,7 @@ public class VideoManager {
     private AssSubtitleView assSubtitleView;
     private Object diagnosticHlsPlaylist;
     private String diagnosticHlsMediaUri;
+    private final ContainerRemuxRecovery containerRemuxRecovery = new ContainerRemuxRecovery();
 
     public boolean isContracted = false;
 
@@ -145,6 +146,7 @@ public class VideoManager {
             @Override
             public void onPlayerError(@NonNull PlaybackException error) {
                 PlaybackCapabilitiesDiagnostic.playerError(error);
+                containerRemuxRecovery.onError(error);
                 Timber.e("***** Got error from player");
                 if (mPlaybackControllerNotifiable != null) mPlaybackControllerNotifiable.onError();
                 stopProgressLoop();
@@ -204,6 +206,7 @@ public class VideoManager {
                         diagnosticHlsMediaUri = mediaUri;
                         PlaybackCapabilitiesDiagnostic.hlsSelected(mediaUri);
                     }
+                    preferSupportedContainerRemux();
                 }
                 Timber.d("Caught player timeline change - reason: %s", reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED ? "PLAYLIST_CHANGED" : "SOURCE_UPDATE");
             }
@@ -211,6 +214,7 @@ public class VideoManager {
             @Override
             public void onTracksChanged(Tracks tracks) {
                 PlaybackCapabilitiesDiagnostic.videoTracks(tracks);
+                preferSupportedContainerRemux();
                 Timber.d("Tracks changed");
                 if (mPlaybackControllerNotifiable != null) mPlaybackControllerNotifiable.onTracksChanged();
             }
@@ -360,6 +364,7 @@ public class VideoManager {
             mExoPlayer.setTrackSelectionParameters(mExoPlayer.getTrackSelectionParameters()
                     .buildUpon()
                     .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                    .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
                     .build());
         }
 
@@ -400,6 +405,12 @@ public class VideoManager {
         Timber.i("Video path set to: %s", path);
 
         try {
+            containerRemuxRecovery.prepare(streamInfo.getItemId(), streamInfo.getMediaSourceId(), streamInfo.getPlayMethod(),
+                    streamInfo.getMediaSource().getContainer(), streamInfo.getMediaSource().getLiveStreamId() != null);
+            mExoPlayer.setTrackSelectionParameters(mExoPlayer.getTrackSelectionParameters().buildUpon()
+                    .clearOverridesOfType(C.TRACK_TYPE_VIDEO).build());
+            diagnosticHlsPlaylist = null;
+            diagnosticHlsMediaUri = null;
             // Add external subtitles
             List<MediaItem.SubtitleConfiguration> subtitleConfigurations = new ArrayList<>();
             for (MediaStream mediaStream : streamInfo.getMediaSource().getMediaStreams()) {
@@ -429,6 +440,16 @@ public class VideoManager {
         } catch (IllegalStateException e) {
             Timber.e(e, "Unable to set video path.  Probably backing out.");
         }
+    }
+
+    private void preferSupportedContainerRemux() {
+        Object manifest = mExoPlayer.getCurrentManifest();
+        if (!(manifest instanceof HlsManifest)) return;
+        TrackSelectionOverride choice = containerRemuxRecovery.findOverride(mExoPlayer.getCurrentTracks(), (HlsManifest) manifest);
+        if (choice == null || choice.equals(mExoPlayer.getTrackSelectionParameters().overrides.get(choice.mediaTrackGroup))) return;
+        PlaybackCapabilitiesDiagnostic.remuxRecovery();
+        mExoPlayer.setTrackSelectionParameters(mExoPlayer.getTrackSelectionParameters().buildUpon()
+                .setOverrideForType(choice).build());
     }
 
     private int offsetStreamIndex(int index, boolean adjustByAdding, @Nullable List<org.jellyfin.sdk.model.api.MediaStream> allStreams) {
