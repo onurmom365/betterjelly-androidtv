@@ -66,11 +66,12 @@ class ContainerRemuxRecovery {
 				val format = group.getTrackFormat(index)
 				idMatches += manifest.multivariantPlaylist.variants.count { format.id != null && it.format.id == format.id }
 				mimeMatches += manifest.multivariantPlaylist.variants.count { MimeTypes.getVideoMediaMimeType(it.format.codecs) == format.sampleMimeType }
-				// Media3 preserves the manifest format ID when deriving HLS video tracks.
-				// Refuse ambiguous mappings rather than guessing from codec or list position.
+				// Player/extractor format IDs may replace playlist IDs. Match only a unique
+				// equivalent video format, never list order or an ambiguous codec-only match.
 				val variant = manifest.multivariantPlaylist.variants.singleOrNull {
-					format.id != null && it.format.id == format.id && it.format.width == format.width &&
-						it.format.height == format.height && MimeTypes.getVideoMediaMimeType(it.format.codecs) == format.sampleMimeType
+					it.format.width == format.width && it.format.height == format.height &&
+						it.format.bitrate == format.bitrate && it.format.frameRate == format.frameRate &&
+						MimeTypes.getVideoMediaMimeType(it.format.codecs) == format.sampleMimeType
 				} ?: return@mapNotNull null
 				val copy = summarizeCopyRequest(variant.url.toString())
 				RemuxVideoTrack(groupIndex, index, format.width, format.height, format.bitrate, format.frameRate,
