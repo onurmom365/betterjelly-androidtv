@@ -86,18 +86,23 @@ object PlaybackCapabilitiesDiagnostic {
 		Log.i(TAG, "hlsVariantCount=${variants.size}")
 		variants.take(12).forEachIndexed { index, variant ->
 			val format = variant.format
-			Log.i(TAG, "hlsVariant=$index videoCodec=${safeVideoMime(MimeTypes.getVideoMediaMimeType(format.codecs))} width=${format.width} height=${format.height} colorTransfer=${format.colorInfo?.colorTransfer}")
+			Log.i(TAG, "hlsVariant=$index videoCodec=${safeVideoMime(MimeTypes.getVideoMediaMimeType(format.codecs))} width=${format.width} height=${format.height} colorTransfer=${format.colorInfo?.colorTransfer} trackBitrate=${format.bitrate} frameMilli=${frameMilli(format.frameRate)}")
 			copyRequest("OFFERED", variant.url.toString())
 		}
 	}
 	@JvmStatic fun hlsSelected(uri: String) { copyRequest("SELECTED", uri) }
 	@JvmStatic fun remuxRecovery() { Log.i(TAG, "containerRemuxPreferred=true") }
+	@JvmStatic fun remuxState(recovery: ContainerRemuxRecovery) {
+		val state = recovery.diagnostic()
+		Log.i(TAG, "remuxGate=${state.gate} remuxEnabled=${state.enabled} remuxSameItem=${state.sameItem} remuxSameSource=${state.sameSource} remuxIdMatches=${state.idMatches} remuxMimeMatches=${state.mimeMatches} remuxCandidates=${state.candidates}")
+	}
 	@JvmStatic fun videoTracks(tracks: Tracks) {
 		tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }.take(12).forEachIndexed { groupIndex, group ->
 			(0 until minOf(group.length, 12)).forEach { index ->
 				val format = group.getTrackFormat(index)
-				Log.i(TAG, "videoGroup=$groupIndex videoTrack=$index trackSelected=${group.isTrackSelected(index)} trackSupport=${group.getTrackSupport(index)} videoCodec=${safeVideoMime(format.sampleMimeType)} width=${format.width} height=${format.height} colorTransfer=${format.colorInfo?.colorTransfer}")
+				Log.i(TAG, "videoGroup=$groupIndex videoTrack=$index trackSelected=${group.isTrackSelected(index)} trackSupport=${group.getTrackSupport(index)} videoCodec=${safeVideoMime(format.sampleMimeType)} width=${format.width} height=${format.height} colorTransfer=${format.colorInfo?.colorTransfer} trackBitrate=${format.bitrate} frameMilli=${frameMilli(format.frameRate)}")
 			}
 		}
 	}
+	private fun frameMilli(value: Float): Int = if (value.isFinite() && value in 0f..1000f) (value * 1000).toInt() else -1
 }

@@ -147,6 +147,7 @@ public class VideoManager {
             public void onPlayerError(@NonNull PlaybackException error) {
                 PlaybackCapabilitiesDiagnostic.playerError(error);
                 containerRemuxRecovery.onError(error);
+                PlaybackCapabilitiesDiagnostic.remuxState(containerRemuxRecovery);
                 Timber.e("***** Got error from player");
                 if (mPlaybackControllerNotifiable != null) mPlaybackControllerNotifiable.onError();
                 stopProgressLoop();
@@ -407,6 +408,7 @@ public class VideoManager {
         try {
             containerRemuxRecovery.prepare(streamInfo.getItemId(), streamInfo.getMediaSourceId(), streamInfo.getPlayMethod(),
                     streamInfo.getMediaSource().getContainer(), streamInfo.getMediaSource().getLiveStreamId() != null);
+            PlaybackCapabilitiesDiagnostic.remuxState(containerRemuxRecovery);
             mExoPlayer.setTrackSelectionParameters(mExoPlayer.getTrackSelectionParameters().buildUpon()
                     .clearOverridesOfType(C.TRACK_TYPE_VIDEO).build());
             diagnosticHlsPlaylist = null;
@@ -446,6 +448,7 @@ public class VideoManager {
         Object manifest = mExoPlayer.getCurrentManifest();
         if (!(manifest instanceof HlsManifest)) return;
         TrackSelectionOverride choice = containerRemuxRecovery.findOverride(mExoPlayer.getCurrentTracks(), (HlsManifest) manifest);
+        PlaybackCapabilitiesDiagnostic.remuxState(containerRemuxRecovery);
         if (choice == null || choice.equals(mExoPlayer.getTrackSelectionParameters().overrides.get(choice.mediaTrackGroup))) return;
         PlaybackCapabilitiesDiagnostic.remuxRecovery();
         mExoPlayer.setTrackSelectionParameters(mExoPlayer.getTrackSelectionParameters().buildUpon()
