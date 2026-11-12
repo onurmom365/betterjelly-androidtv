@@ -24,8 +24,10 @@ class ContainerRemuxRecoveryTests : FunSpec({
 		state.direct()
 		state.enabled shouldBe false
 		state.onError(zlibFailure())
+		state.handlesCurrentError shouldBe true
 		state.retry()
 		state.enabled shouldBe true
+		state.handlesCurrentError shouldBe false
 	}
 	test("a fresh direct start or a different item or media source clears recovery") {
 		for (reset in listOf<(ContainerRemuxRecovery) -> Unit>(
@@ -41,6 +43,7 @@ class ContainerRemuxRecoveryTests : FunSpec({
 		state.direct(); state.onError(zlibFailure()); state.retry()
 		state.onError(zlibFailure()); state.retry()
 		state.enabled shouldBe false
+		state.handlesCurrentError shouldBe false
 	}
 	test("live sources or unidentified items cannot enable recovery") {
 		for (prepare in listOf<(ContainerRemuxRecovery) -> Unit>(
@@ -57,6 +60,7 @@ class ContainerRemuxRecoveryTests : FunSpec({
 		val state = ContainerRemuxRecovery()
 		state.direct(); state.onError(IllegalStateException("private")); state.retry()
 		state.enabled shouldBe false
+		state.handlesCurrentError shouldBe false
 	}
 	test("prefers the unique fully supported same-quality remux over forced encode") {
 		selectSupportedRemux(listOf(encode(), remux())) shouldBe remux()

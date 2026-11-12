@@ -149,7 +149,7 @@ public class VideoManager {
                 containerRemuxRecovery.onError(error);
                 PlaybackCapabilitiesDiagnostic.remuxState(containerRemuxRecovery);
                 Timber.e("***** Got error from player");
-                if (mPlaybackControllerNotifiable != null) mPlaybackControllerNotifiable.onError();
+                if (mPlaybackControllerNotifiable != null) mPlaybackControllerNotifiable.onError(containerRemuxRecovery.getHandlesCurrentError());
                 stopProgressLoop();
             }
 

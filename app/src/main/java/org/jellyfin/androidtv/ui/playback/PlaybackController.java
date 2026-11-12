@@ -260,6 +260,10 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     public void playerErrorEncountered() {
+        playerErrorEncountered(false);
+    }
+
+    private void playerErrorEncountered(boolean automaticContainerRecovery) {
         // reset the retry count if it's been more than 30s since previous error
         if (playbackRetries > 0 && Instant.now().toEpochMilli() - lastPlaybackError > 30000) {
             Timber.i("playback stabilized - retry count reset to 0 from %s", playbackRetries);
@@ -270,7 +274,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         lastPlaybackError = Instant.now().toEpochMilli();
 
         if (playbackRetries < 3) {
-            if (mFragment != null)
+            if (mFragment != null && !automaticContainerRecovery)
                 Utils.showToast(mFragment.getContext(), mFragment.getString(R.string.player_error));
             Timber.i("Player error encountered - retrying");
             stop();
@@ -1333,10 +1337,14 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         }
     }
 
-    @Override
     public void onError() {
+        onError(false);
+    }
+
+    @Override
+    public void onError(boolean automaticContainerRecovery) {
         if (mFragment == null) {
-            playerErrorEncountered();
+            playerErrorEncountered(automaticContainerRecovery);
             return;
         }
 
@@ -1347,7 +1355,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             String msg = mFragment.getString(R.string.video_error_unknown_error);
             Timber.e("Playback error - %s", msg);
         }
-        playerErrorEncountered();
+        playerErrorEncountered(automaticContainerRecovery);
     }
 
     @Override

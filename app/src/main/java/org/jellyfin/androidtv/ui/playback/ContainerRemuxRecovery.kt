@@ -20,6 +20,7 @@ class ContainerRemuxRecovery {
 	private var directMkv = false
 	var enabled = false
 		private set
+	val handlesCurrentError: Boolean get() = gate == RemuxGate.ARMED && pending != null
 	private var gate = RemuxGate.NOT_ARMED
 	private var sameItem = false
 	private var sameSource = false
