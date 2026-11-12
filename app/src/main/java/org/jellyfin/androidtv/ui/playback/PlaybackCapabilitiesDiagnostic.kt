@@ -10,6 +10,10 @@ import org.jellyfin.sdk.model.api.PlayMethod
 import java.util.concurrent.atomic.AtomicInteger
 import androidx.media3.common.PlaybackException
 import androidx.media3.exoplayer.ExoPlaybackException
+import androidx.media3.exoplayer.hls.HlsManifest
+import androidx.media3.common.Tracks
+import androidx.media3.common.C
+import androidx.media3.common.MimeTypes
 
 enum class SubtitleSelectionOutcome { WAITING, APPLIED, OFF, MISSING_STREAM }
 enum class SubtitleCheckpoint { CREATED, REQUEST, START_ITEM, START_READY, PREPARED, PAUSED_RESUME, BURNED_PATH,
@@ -61,6 +65,8 @@ object PlaybackCapabilitiesDiagnostic {
 	internal fun negotiation(options: VideoOptions, response: PlaybackInfoResponse) {
 		val source = response.mediaSources.firstOrNull { it.id == options.mediaSourceId } ?: response.mediaSources.firstOrNull() ?: return
 		val video = source.mediaStreams.orEmpty().firstOrNull { it.type == MediaStreamType.VIDEO }
+		Log.i(TAG, "sourceVideoBitrate=${video?.bitRate} sourceVideoLevel=${video?.level} sourceRotation=${video?.rotation}")
+		copyRequest("NEGOTIATED", source.transcodingUrl)
 		Log.i(TAG, "container=${safeContainer(source.container)} videoCodec=${safeVideoCodec(video?.codec)} width=${video?.width} height=${video?.height} bitDepth=${video?.bitDepth} videoRange=${video?.videoRangeType?.serialName}")
 		val audio = source.mediaStreams.orEmpty().filter { it.type == MediaStreamType.AUDIO }
 			.let { tracks -> tracks.firstOrNull { it.index == (options.audioStreamIndex ?: source.defaultAudioStreamIndex) } ?: tracks.firstOrNull() }
@@ -70,5 +76,27 @@ object PlaybackCapabilitiesDiagnostic {
 		Log.i(TAG, "requestDirectPlay=%s requestDirectStream=%s profileOpus=%s profileAss=%s audioCodec=%s channels=%s sampleRate=%s sourceDirectPlay=%s sourceDirectStream=%s reasons=%s".format(
 			options.enableDirectPlay, options.enableDirectStream, opusAllowed, assAllowed, safeCodec(audio?.codec), audio?.channels, audio?.sampleRate,
 			source.supportsDirectPlay, source.supportsDirectStream, safeReasons(source.transcodingUrl)))
+	}
+	private fun copyRequest(stage: String, uri: String?) {
+		val safe = summarizeCopyRequest(uri)
+		Log.i(TAG, "fallbackStage=$stage videoCopy=${safe.videoCopy} audioCopy=${safe.audioCopy} autoCopy=${safe.autoCopy} segmentContainer=${safe.segmentContainer} targetVideoBitrate=${safe.targetVideoBitrate} targetMaxWidth=${safe.targetMaxWidth} targetMaxHeight=${safe.targetMaxHeight}")
+	}
+	@JvmStatic fun hlsVariants(manifest: HlsManifest) {
+		val variants = manifest.multivariantPlaylist.variants
+		Log.i(TAG, "hlsVariantCount=${variants.size}")
+		variants.take(12).forEachIndexed { index, variant ->
+			val format = variant.format
+			Log.i(TAG, "hlsVariant=$index videoCodec=${safeVideoMime(MimeTypes.getVideoMediaMimeType(format.codecs))} width=${format.width} height=${format.height} colorTransfer=${format.colorInfo?.colorTransfer}")
+			copyRequest("OFFERED", variant.url.toString())
+		}
+	}
+	@JvmStatic fun hlsSelected(uri: String) { copyRequest("SELECTED", uri) }
+	@JvmStatic fun videoTracks(tracks: Tracks) {
+		tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }.take(12).forEachIndexed { groupIndex, group ->
+			(0 until minOf(group.length, 12)).forEach { index ->
+				val format = group.getTrackFormat(index)
+				Log.i(TAG, "videoGroup=$groupIndex videoTrack=$index trackSelected=${group.isTrackSelected(index)} trackSupport=${group.getTrackSupport(index)} videoCodec=${safeVideoMime(format.sampleMimeType)} width=${format.width} height=${format.height} colorTransfer=${format.colorInfo?.colorTransfer}")
+			}
+		}
 	}
 }

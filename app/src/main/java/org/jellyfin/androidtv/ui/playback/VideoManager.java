@@ -33,6 +33,7 @@ import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.hls.HlsManifest;
 import androidx.media3.exoplayer.analytics.AnalyticsListener;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
@@ -87,6 +88,8 @@ public class VideoManager {
     private boolean nightModeEnabled;
     private AssHandler assHandler;
     private AssSubtitleView assSubtitleView;
+    private Object diagnosticHlsPlaylist;
+    private String diagnosticHlsMediaUri;
 
     public boolean isContracted = false;
 
@@ -189,11 +192,25 @@ public class VideoManager {
 
             @Override
             public void onTimelineChanged(@NonNull Timeline timeline, int reason) {
+                Object manifest = mExoPlayer.getCurrentManifest();
+                if (manifest instanceof HlsManifest) {
+                    HlsManifest hls = (HlsManifest) manifest;
+                    if (diagnosticHlsPlaylist != hls.multivariantPlaylist) {
+                        diagnosticHlsPlaylist = hls.multivariantPlaylist;
+                        PlaybackCapabilitiesDiagnostic.hlsVariants(hls);
+                    }
+                    String mediaUri = hls.mediaPlaylist.baseUri;
+                    if (!mediaUri.equals(diagnosticHlsMediaUri)) {
+                        diagnosticHlsMediaUri = mediaUri;
+                        PlaybackCapabilitiesDiagnostic.hlsSelected(mediaUri);
+                    }
+                }
                 Timber.d("Caught player timeline change - reason: %s", reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED ? "PLAYLIST_CHANGED" : "SOURCE_UPDATE");
             }
 
             @Override
             public void onTracksChanged(Tracks tracks) {
+                PlaybackCapabilitiesDiagnostic.videoTracks(tracks);
                 Timber.d("Tracks changed");
                 if (mPlaybackControllerNotifiable != null) mPlaybackControllerNotifiable.onTracksChanged();
             }
