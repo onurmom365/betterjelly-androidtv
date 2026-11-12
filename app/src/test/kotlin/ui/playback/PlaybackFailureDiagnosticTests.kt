@@ -25,6 +25,26 @@ class PlaybackFailureDiagnosticTests : FunSpec({
 		}
 		summarizePlaybackFailure(error) shouldBe SafePlaybackFailure(listOf(FailureCause.OTHER), ParserComponent.OTHER)
 	}
+	test("reports the MKV rejection rather than the calling EBML dispatcher") {
+		val error = ParserException.createForMalformedContainer("ContentCompAlgo 0 not supported", null).apply {
+			stackTrace = arrayOf(
+				StackTraceElement("androidx.media3.extractor.mkv.MatroskaExtractor", "integerElement", "MatroskaExtractor.java", 1016),
+				StackTraceElement("androidx.media3.extractor.mkv.DefaultEbmlReader", "read", "DefaultEbmlReader.java", 124),
+			)
+		}
+		val summary = summarizePlaybackFailure(error)
+		summary.parser shouldBe ParserComponent.MATROSKA
+		summary.parserLine shouldBe 1016
+		summary.rejection shouldBe ParserRejection.COMPRESSION_ALGORITHM
+		summary.rejectedValue shouldBe 0L
+	}
+	test("parser template lookalikes cannot expose private suffixes") {
+		val summary = summarizePlaybackFailure(ParserException.createForMalformedContainer("ContentCompAlgo 12 not supported https://private?token=secret", null))
+		summary.rejection shouldBe ParserRejection.OTHER
+		summary.rejectedValue shouldBe null
+		summary.toString().contains("private") shouldBe false
+		summary.toString().contains("secret") shouldBe false
+	}
 	test("cyclic exception causes terminate") {
 		val first = RuntimeException()
 		val second = IllegalStateException()

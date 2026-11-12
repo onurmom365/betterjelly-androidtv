@@ -43,7 +43,7 @@ object PlaybackCapabilitiesDiagnostic {
 	@JvmStatic fun playerError(error: PlaybackException) {
 		playerError(error.errorCode)
 		val safe = summarizePlaybackFailure(error)
-		Log.i(TAG, "errorCauseTypes=${safe.causes.joinToString("|")} parserComponent=${safe.parser} parserLine=${safe.parserLine} exoErrorType=${(error as? ExoPlaybackException)?.type ?: -1}")
+		Log.i(TAG, "errorCauseTypes=${safe.causes.joinToString("|")} parserComponent=${safe.parser} parserLine=${safe.parserLine} parserRejection=${safe.rejection} parserValue=${safe.rejectedValue} exoErrorType=${(error as? ExoPlaybackException)?.type ?: -1}")
 	}
 	internal fun safeVideoCodec(value: String?) = value?.lowercase()?.takeIf {
 		it in setOf("h264", "hevc", "h265", "av1", "mpeg2video", "mpeg4", "vc1", "vp8", "vp9")
