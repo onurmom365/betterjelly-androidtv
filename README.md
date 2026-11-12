@@ -13,6 +13,7 @@ An independent Jellyfin Android TV fork with remote seeking improvements, option
 - Separate Resume and Play from beginning actions.
 - Audio/subtitle selection before playback on movie, episode and series pages, with persistent series choices, Off and server Default options. Explicit manual choices take precedence over automatic startup track commands.
 - Optional libass ASS/SSA direct playback for styled subtitles and embedded fonts. Enable it under Playback → Advanced playback settings. See [subtitle setup](docs/ASS_SUBTITLES.md) and [pre-play tracks](docs/PREPLAY_TRACKS.md).
+- Recovery for a specific unsupported compressed-MKV header: prefer a fully supported, equivalent-quality HLS video remux over a forced video encode. Shield playback is verified; startup/seek latency, trickplay speed and Fire TV behavior remain under investigation. HLS audio conversion can still occur.
 - Immediate return-to-details Resume for early playback, using a local 30-minute/current-process return point while normal server resume rules remain unchanged.
 - Smooth colored countdown before supported intro/credits/recap segments. Back during the countdown lets that segment play through for the current playback session.
 - Regular Search includes Seerr poster results above library results. Native title details, season selection, request review/history and permitted failed-request Retry/Delete controls.

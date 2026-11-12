@@ -33,6 +33,8 @@ Returning from early playback can now show Resume even before the server keeps a
 
 ## Update while preserving settings
 
+Version **1.0.3** includes Shield-tested recovery for a specific compressed-MKV startup failure and selects a supported HLS video remux when available. Fire TV users can install it to test affected playback. It does not guarantee every Dolby track/output path; startup/seek delay and trickplay speed remain open, and HLS audio conversion can still occur. Existing playback settings stay in place.
+
 In 1.0.1 and later, open **Settings → About → Check for updates**. Review the version/notes, select **Download update**, then **Install update**. If asked, allow **Jellyfin** in **Install unknown apps**, return to the updater and select Install update again. Confirm the system install dialog. Cancelling the download/installer leaves the current app and settings in place.
 
 Automatic checks run about once every 24 hours, even if the app stays open, using Android's persistent background scheduler. They check availability only, require a network connection and may be delayed by sleep or OS power restrictions. An unseen compatible update prompts on Home; playback is not interrupted. **Automatic checks: Off** disables the daily job. Manual Check for updates bypasses the daily schedule and remains available.

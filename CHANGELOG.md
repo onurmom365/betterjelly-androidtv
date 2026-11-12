@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.3 — 2026-11-11
+
+- Recover from the specific unsupported zlib-compressed MKV track header by using the server's HLS fallback. When the player would select a forced video encode, prefer a unique equally sized/equally rated remux that Media3 reports as fully supported. Ordinary fallback remains available if recovery fails.
+- Match equivalent HLS video formats even when player track IDs differ from playlist IDs. Refuse ambiguous mappings and unsupported or different-quality alternatives.
+- Avoid the generic startup error popup for this recognized automatic container recovery; other player errors and terminal failure notifications remain visible.
+- Added diagnostics limited to fixed categories, numeric media properties and anonymous state flags, with no media identities, URLs or credentials.
+
+Shield testing confirms working playback and resumed seeking for the affected container case. Startup/seek delays and trickplay responsiveness still need improvement. Fire TV testing is pending; this release is available for that testing, not a universal Dolby or Fire playback fix. The recovery targets preserving the original video; server-side HLS audio conversion may still occur, and lossless audio output is not confirmed. Existing Seerr, subtitle selections, seek/OK/skip behavior and updater are retained.
+
 ## 1.0.2 — 2026-11-02
 
 - Added optional ASS/SSA direct playback with libass, preserving styled subtitles and embedded font attachments on compatible playback. Enable it in Settings → Playback → Advanced playback settings; it remains experimental and off by default. Transcoding fallbacks remain available.
