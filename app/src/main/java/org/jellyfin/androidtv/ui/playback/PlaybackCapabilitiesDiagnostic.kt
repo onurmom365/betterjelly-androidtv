@@ -8,6 +8,8 @@ import android.util.Log
 import org.jellyfin.sdk.model.api.SubtitleDeliveryMethod
 import org.jellyfin.sdk.model.api.PlayMethod
 import java.util.concurrent.atomic.AtomicInteger
+import androidx.media3.common.PlaybackException
+import androidx.media3.exoplayer.ExoPlaybackException
 
 enum class SubtitleSelectionOutcome { WAITING, APPLIED, OFF, MISSING_STREAM }
 enum class SubtitleCheckpoint { CREATED, REQUEST, START_ITEM, START_READY, PREPARED, PAUSED_RESUME, BURNED_PATH,
@@ -38,6 +40,17 @@ object PlaybackCapabilitiesDiagnostic {
 		it in setOf("opus", "libopus", "aac", "aac_latm", "ac3", "eac3", "flac", "dts", "dca", "truehd", "vorbis", "pcm_s16le")
 	} ?: "other"
 	@JvmStatic fun playerError(code: Int) { Log.i(TAG, "playerErrorCode=$code") }
+	@JvmStatic fun playerError(error: PlaybackException) {
+		playerError(error.errorCode)
+		val safe = summarizePlaybackFailure(error)
+		Log.i(TAG, "errorCauseTypes=${safe.causes.joinToString("|")} parserComponent=${safe.parser} parserLine=${safe.parserLine} exoErrorType=${(error as? ExoPlaybackException)?.type ?: -1}")
+	}
+	internal fun safeVideoCodec(value: String?) = value?.lowercase()?.takeIf {
+		it in setOf("h264", "hevc", "h265", "av1", "mpeg2video", "mpeg4", "vc1", "vp8", "vp9")
+	} ?: "other"
+	internal fun safeContainer(value: String?) = value?.lowercase()?.takeIf {
+		it in setOf("mkv", "matroska", "mp4", "mov", "mpegts", "ts", "webm", "m4v", "avi", "asf", "ogg", "wmv")
+	} ?: "other"
 	@JvmStatic fun subtitle(index: Int?, outcome: SubtitleSelectionOutcome, groups: Int) {
 		Log.i(TAG, "subtitleIndex=$index subtitleOutcome=$outcome textGroups=$groups")
 	}
@@ -47,6 +60,8 @@ object PlaybackCapabilitiesDiagnostic {
 	}
 	internal fun negotiation(options: VideoOptions, response: PlaybackInfoResponse) {
 		val source = response.mediaSources.firstOrNull { it.id == options.mediaSourceId } ?: response.mediaSources.firstOrNull() ?: return
+		val video = source.mediaStreams.orEmpty().firstOrNull { it.type == MediaStreamType.VIDEO }
+		Log.i(TAG, "container=${safeContainer(source.container)} videoCodec=${safeVideoCodec(video?.codec)} width=${video?.width} height=${video?.height} bitDepth=${video?.bitDepth} videoRange=${video?.videoRangeType?.serialName}")
 		val audio = source.mediaStreams.orEmpty().filter { it.type == MediaStreamType.AUDIO }
 			.let { tracks -> tracks.firstOrNull { it.index == (options.audioStreamIndex ?: source.defaultAudioStreamIndex) } ?: tracks.firstOrNull() }
 		val opusAllowed = options.profile?.directPlayProfiles.orEmpty().any { "opus" in it.audioCodec.orEmpty().split(',') }
