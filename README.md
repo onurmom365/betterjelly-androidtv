@@ -31,6 +31,8 @@ The application ID is **`org.jellyfin.androidtv.debug`**, retained from the test
 
 Version 1.0.1 adds **Settings → About → Check for updates**. Review the update, choose Download update, then Install update and confirm the system installer. Compatible settings and saved sessions are retained; do not uninstall first. You may need to allow Jellyfin to install updates once. Daily background checks can be switched off, do not require closing the app, and defer prompts until Home. Android sleep/network restrictions can delay a check; downloads and installs always require your selection. Existing 1.0.0 users need Downloader code 8769319 once to get the updater. Official store updates do not update this fork.
 
+Version **1.0.4** repairs certificate reading on older Android/affected Fire OS versions. If an older updater refuses the update with a signing-identity message, use Downloader **8769319** once to install over the fork, preserving settings. The old check runs before the fix can be installed. The certificate pin and signing key are unchanged; later in-app updates use the repaired check.
+
 ## Source and license
 
 Based on Jellyfin Android TV **v0.19.10**, upstream commit `984181a3d6ab14e9a6d2dcc850c582e1c138bd95`. Original copyright and license notices are retained. Distributed under GPL-2.0-or-later; see [LICENSE](LICENSE), [changes](CHANGELOG.md), [build instructions](docs/BUILD.md) and the [preserved upstream README](docs/UPSTREAM_README.md). Third-party dependency notices remain available in the app.

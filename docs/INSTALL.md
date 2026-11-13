@@ -33,6 +33,8 @@ Returning from early playback can now show Resume even before the server keeps a
 
 ## Update while preserving settings
 
+**Fire OS signing-message repair in 1.0.4:** If an older fork reports that the update's signing identity does not match, use Downloader code **8769319** or the latest APK link once and install over the existing fork. **Do not uninstall or clear data.** The older updater's certificate-reading bug can block installation before the fixed updater can run. Once 1.0.4 is installed, future in-app updates use the corrected certificate check; the signing key and package identity remain the same.
+
 Version **1.0.3** includes Shield-tested recovery for a specific compressed-MKV startup failure and selects a supported HLS video remux when available. Fire TV users can install it to test affected playback. It does not guarantee every Dolby track/output path; startup/seek delay and trickplay speed remain open, and HLS audio conversion can still occur. Existing playback settings stay in place.
 
 In 1.0.1 and later, open **Settings → About → Check for updates**. Review the version/notes, select **Download update**, then **Install update**. If asked, allow **Jellyfin** in **Install unknown apps**, return to the updater and select Install update again. Confirm the system install dialog. Cancelling the download/installer leaves the current app and settings in place.

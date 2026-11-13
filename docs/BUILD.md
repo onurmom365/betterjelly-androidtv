@@ -10,7 +10,7 @@ Set `JAVA_HOME` and `ANDROID_HOME` for your installation, then run:
 ./gradlew :app:testDebugUnitTest assembleDebug
 ```
 
-The default fork version is 1.0.3. Set `JELLYFIN_VERSION` to a semantic release version for subsequent builds. Version codes use the existing upstream mapping: 1.0.0 → 1000099, 1.0.1 → 1000199, 1.0.2 → 1000299, 1.0.3 → 1000399. Never publish a release whose code does not exceed the installed/released version.
+The default fork version is 1.0.4. Set `JELLYFIN_VERSION` to a semantic release version for subsequent builds. Version codes use the existing upstream mapping: 1.0.0 → 1000099, 1.0.1 → 1000199, 1.0.2 → 1000299, 1.0.3 → 1000399, 1.0.4 → 1000499. Never publish a release whose code does not exceed the installed/released version.
 
 Both build types use `org.jellyfin.androidtv.debug`, preserving the existing fork identity independently of official Jellyfin. Release builds display Jellyfin; development builds display Jellyfin Debug. Both use the original Jellyfin artwork/splash assets. Building a debug APK on another machine normally creates a different signing identity and will not update a maintainer-signed installation.
 

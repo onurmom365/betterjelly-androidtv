@@ -95,6 +95,8 @@ internal fun parseUpdateManifest(bytes: ByteArray, listing: UpdateListing): Fork
 internal fun verifyUpdateArchive(release: ForkRelease, archive: UpdateArchive, installed: UpdateArchive, sdk: Int) {
 	updateRequire(installed.packageName == UPDATE_PACKAGE && archive.packageName == UPDATE_PACKAGE,
 		"This update is for a different app. Nothing was installed.")
+	updateRequire(installed.certificates.isNotEmpty() && archive.certificates.isNotEmpty(),
+		"Android could not read the signing certificate. Nothing was installed. Use Downloader code 8769319 to install the latest update over this app without uninstalling.")
 	updateRequire(installed.certificates == listOf(UPDATE_CERTIFICATE) && archive.certificates == installed.certificates,
 		"The update's signing identity does not match this app. Nothing was installed.")
 	updateRequire(archive.code == release.code.toLong() && archive.version == release.version && archive.code > installed.code,

@@ -1,6 +1,7 @@
 package org.jellyfin.androidtv.ui.update
 
 import android.content.ClipData
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -10,13 +11,22 @@ import android.os.Build
 import androidx.core.content.FileProvider
 import java.io.File
 
+/** Android 9's archive parser collects certificates only when GET_SIGNATURES is included. */
 @Suppress("DEPRECATION")
-private fun PackageInfo.updateArchive(): UpdateArchive {
-	val signers = if (Build.VERSION.SDK_INT >= 28) signingInfo?.apkContentsSigners else signatures
-	return UpdateArchive(packageName, versionName, if (Build.VERSION.SDK_INT >= 28) longVersionCode else versionCode.toLong(),
+internal fun updatePackageFlags(sdk: Int): Int = PackageManager.GET_SIGNATURES or
+	if (sdk >= 28) PackageManager.GET_SIGNING_CERTIFICATES else 0
+
+// Production callers pass Build.VERSION.SDK_INT; the argument permits old-framework regression tests.
+@SuppressLint("NewApi")
+@Suppress("DEPRECATION")
+internal fun PackageInfo.updateArchive(sdk: Int): UpdateArchive {
+	val current = if (sdk >= 28) signingInfo?.apkContentsSigners else null
+	// Prefer current signers even if they fail the pin. Legacy is only for absent modern metadata.
+	val signers = current?.takeIf { it.isNotEmpty() } ?: signatures
+	return UpdateArchive(packageName, versionName, if (sdk >= 28) longVersionCode else versionCode.toLong(),
 		signers?.map { sha256(it.toByteArray()) }.orEmpty(),
 		(applicationInfo?.flags ?: 0) and ApplicationInfo.FLAG_DEBUGGABLE != 0,
-		if (Build.VERSION.SDK_INT >= 24) applicationInfo?.minSdkVersion else null)
+		if (sdk >= 24) applicationInfo?.minSdkVersion else null)
 }
 
 /** Re-read the actual installed and downloaded packages immediately before granting an installer URI. */
@@ -25,11 +35,12 @@ internal fun verifyInstallFile(context: Context, file: File, release: ForkReleas
 	val directory = File(context.cacheDir, "fork-updates").canonicalFile
 	updateRequire(file.canonicalFile.parentFile == directory && file.name.endsWith(".apk"))
 	updateRequire(verifyDownloadedUpdate(file, release.asset), "The saved update failed verification. Download it again before installing.")
-	val flags = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
-	val installed = context.packageManager.getPackageInfo(context.packageName, flags).updateArchive()
-	val archive = context.packageManager.getPackageArchiveInfo(file.absolutePath, flags)?.updateArchive()
+	val sdk = Build.VERSION.SDK_INT
+	val flags = updatePackageFlags(sdk)
+	val installed = context.packageManager.getPackageInfo(context.packageName, flags).updateArchive(sdk)
+	val archive = context.packageManager.getPackageArchiveInfo(file.absolutePath, flags)?.updateArchive(sdk)
 		?: throw UpdateFailure("Android could not verify this APK. Nothing was installed.")
-	verifyUpdateArchive(release, archive, installed, Build.VERSION.SDK_INT)
+	verifyUpdateArchive(release, archive, installed, sdk)
 }
 
 internal fun installPermissionGranted(context: Context) = Build.VERSION.SDK_INT < 26 || context.packageManager.canRequestPackageInstalls()

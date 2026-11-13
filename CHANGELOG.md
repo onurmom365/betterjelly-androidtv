@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.4 — 2026-11-12
+
+- Fixed updater APK certificate extraction on Android 9/10 and affected Fire OS versions. Request both certificate flags so older archive parsers actually collect the APK's certificates; use the legacy certificate field only when modern metadata is unavailable.
+- Keep the same signing key, exact certificate pin, package/version/hash checks and system installer confirmation. A mismatched current signer cannot be bypassed by a matching legacy field; unsigned and multiple-signer packages remain rejected.
+- Distinguish missing certificate metadata from a real signing mismatch.
+
+If an older installation blocks the update with a signing-identity message, use Downloader code **8769319** once and install over the existing fork, without uninstalling. The old updater performs its check before this fix can run. Later in-app updates use the corrected check. Playback, quality, Seerr and saved settings are unchanged from 1.0.3; existing latency/trickplay work remains separate. Real Fire OS installer confirmation is still required.
+
 ## 1.0.3 — 2026-11-11
 
 - Recover from the specific unsupported zlib-compressed MKV track header by using the server's HLS fallback. When the player would select a forced video encode, prefer a unique equally sized/equally rated remux that Media3 reports as fully supported. Ordinary fallback remains available if recovery fails.
